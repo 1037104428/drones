@@ -197,9 +197,12 @@ Fifty metres is a pessimistic lock range for a point-like ground target (dust, l
 
 Twelve drones sharing one net already give twelve times the gradient of a per-airframe clone. Training is on-policy, step-by-step, CPU-parallel within the tick. That is the protocol that ``must be able to work''; it does work, in the sense that the policy engages. It does not work as a replacement for $\arg\min$ distance. On a one-shot, low-SNR airframe the extra $4.5\times 10^4$ multiply-adds buy a worse mean survival.
 
+\paragraph{Without trajectory change, inter-drone radio is pointless.}
+Every airframe here flies straight $+Y$ at constant speed; a lock does not bend the path. Radio can only say ``I have this target'' or ``I see a point outside your seeker.'' The first does not help when the next-nearest contact is already outside $D_{\mathrm{tgt}}$, or when all twelve shots are already spent. The second is useless unless the listener can turn toward that track. Same-tick 120--150\,m lock broadcasts added no kills on either seeker range or either ingress---the quantitative form of a simple fact: \textbf{if the drones do not change trajectory in real time, communicating with one another does not improve lethality.} Turning radio into combat power requires at least a heading change, a weave, or a new dive point; that is another dynamical model, not a few extra lock packets.
+
 \section{Conclusion}
 
-A shared Transformer trained by per-tick REINFORCE on CPU learns greedy fire and does not outperform it, at $\sim 4.5\times 10^4$ times the ops, for both a 2$\times$6 line-abreast entry and a Gaussian blob entry. At $D_{\mathrm{tgt}}=100\,\mathrm{m}$, greedy spends nearly all 12 shots (11.63--11.97). That is a strong near-optimum for this model; radio and the net do not improve it. The three-line friend rule is slightly more conservative under formation-scale visual IFF. Ultra-low SNR forbids a richer state; expendability forbids an NPU. Code and CSV metrics: \url{https://github.com/1037104428/drones}.
+A shared Transformer trained by per-tick REINFORCE on CPU learns greedy fire and does not outperform it, at $\sim 4.5\times 10^4$ times the ops, for both a 2$\times$6 line-abreast entry and a Gaussian blob entry. At $D_{\mathrm{tgt}}=100\,\mathrm{m}$, greedy spends nearly all 12 shots (11.63--11.97). That is a strong near-optimum for this model; radio and the net do not improve it. If trajectories stay straight, inter-drone comms add nothing. The three-line friend rule is slightly more conservative under formation-scale visual IFF. Ultra-low SNR forbids a richer state; expendability forbids an NPU. Code and CSV metrics: \url{https://github.com/1037104428/drones}.
 
 \begin{verbatim}
 git clone https://github.com/1037104428/drones.git
