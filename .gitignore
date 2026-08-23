@@ -1,5 +1,7 @@
 /target
 /*.sqlite
+/data/*.sqlite
+/runs/
 *.sqlite-wal
 *.sqlite-shm
 *.sqlite-journal

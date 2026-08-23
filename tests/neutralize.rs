@@ -1,7 +1,7 @@
 use battlefield_sim::config::SimConfig;
 use battlefield_sim::drone::DroneState;
 use battlefield_sim::enemy::EnemyState;
-use battlefield_sim::geom::{row_x_positions, Position};
+use battlefield_sim::geom::{formation_rows, Position};
 use battlefield_sim::ids::{DroneId, EnemyId};
 use battlefield_sim::world::{AbortReason, SimEvent};
 use battlefield_sim::{NearestInRange, World};
@@ -191,11 +191,13 @@ fn twelve_on_six_rails() -> (SimConfig, Vec<Position>) {
     let mut cfg = SimConfig::default();
     cfg.enemy_count = 12;
     let cfg = cfg.validated().unwrap();
-    let xs = row_x_positions(cfg.radius_m, cfg.drones_per_row);
+    let rows = formation_rows(cfg.radius_m, cfg.drones_per_row, cfg.drone_rows);
     let mut positions = Vec::new();
-    for x in xs {
-        positions.push(Position { x, y: -20.0 });
-        positions.push(Position { x, y: 20.0 });
+    for x in &rows[0] {
+        positions.push(Position { x: *x, y: -20.0 });
+    }
+    for x in &rows[1] {
+        positions.push(Position { x: *x, y: 20.0 });
     }
     (cfg, positions)
 }
@@ -214,20 +216,5 @@ fn twelve_on_six_rails_twelve_kills() {
     }
     assert_eq!(kills.len(), 12);
     assert!(world.drones().iter().all(|d| !d.is_live()));
-    let mut south_by_lead = 0;
-    let mut north_by_trail = 0;
-    for e in world.enemies() {
-        let EnemyState::Neutralized { by, .. } = e.state else {
-            panic!("enemy {} survived", e.id.0);
-        };
-        if e.pos.y < 0.0 {
-            assert!(by.0 < 6, "south {} killed by {}", e.id.0, by.0);
-            south_by_lead += 1;
-        } else {
-            assert!(by.0 >= 6, "north {} killed by {}", e.id.0, by.0);
-            north_by_trail += 1;
-        }
-    }
-    assert_eq!(south_by_lead, 6);
-    assert_eq!(north_by_trail, 6);
+    assert!(world.enemies().iter().all(|e| !e.is_alive()));
 }

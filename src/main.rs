@@ -5,10 +5,12 @@ use std::time::Instant;
 use battlefield_sim::algorithm::algorithm_by_name;
 use battlefield_sim::algorithms::TransformerPolicy;
 use battlefield_sim::config::SimConfig;
-use battlefield_sim::experiment::{run_session, simulate_round, ExperimentRunner, RunSpec};
+use battlefield_sim::experiment::{run_session, ExperimentRunner, RunSpec};
+use battlefield_sim::metrics::compute_round_metrics;
+use battlefield_sim::world::{SimEvent, World};
 use battlefield_sim::persist::{RunError, SqliteStore};
 use battlefield_sim::plot::{write_compare_plots, write_metrics_csv};
-use battlefield_sim::CloserThanFriend;
+use battlefield_sim::{CloserThanFriend, NearestInRange};
 use clap::{Parser, Subcommand};
 
 #[derive(Parser, Debug)]
@@ -51,10 +53,23 @@ enum Commands {
         model: PathBuf,
         #[arg(long, default_value_t = 1e-3)]
         lr: f32,
+        /// Skip transformer training; load weights and only run evaluation.
+        #[arg(long, default_value_t = false)]
+        skip_train: bool,
+        /// `aligned` = same x on both rows; `staggered` = brick gaps.
+        #[arg(long, default_value = "aligned")]
+        formation: String,
     },
 }
 
 fn main() -> ExitCode {
+    let n = std::thread::available_parallelism()
+        .map(|n| n.get())
+        .unwrap_or(1);
+    let _ = rayon::ThreadPoolBuilder::new()
+        .num_threads(n)
+        .build_global();
+    eprintln!("CPU threads = {n} (rayon global pool)");
     tracing_subscriber::fmt()
         .with_env_filter(
             tracing_subscriber::EnvFilter::try_from_default_env()
@@ -79,7 +94,19 @@ fn main() -> ExitCode {
             out_dir,
             model,
             lr,
-        } => experiment(train_rounds, eval_rounds, seed, db, out_dir, model, lr),
+            skip_train,
+            formation,
+        } => experiment(
+            train_rounds,
+            eval_rounds,
+            seed,
+            db,
+            out_dir,
+            model,
+            lr,
+            skip_train,
+            formation,
+        ),
     };
     match result {
         Ok(()) => ExitCode::SUCCESS,
@@ -130,53 +157,94 @@ fn experiment(
     out_dir: PathBuf,
     model: PathBuf,
     lr: f32,
+    skip_train: bool,
+    formation: String,
 ) -> Result<(), RunError> {
-    let cfg = SimConfig::default().validated()?;
-    println!(
-        "experiment seed={seed} train={train_rounds} eval={eval_rounds} lr={lr} model={}",
-        model.display()
-    );
-
-    let mut policy = TransformerPolicy::new(seed);
-    policy.set_name("transformer_train");
-    policy.set_greedy(false);
-    println!("synthetic pretrain 8000 CE steps on closer_than_friend labels...");
-    policy.synthetic_pretrain(8000, lr.max(0.003), seed);
-    println!("pretrain done");
-
-    let train_t0 = Instant::now();
-    let mut train_rows = Vec::new();
-    for i in 0..train_rounds {
-        policy.begin_episode();
-        // 200 轮仿真上的行为克隆：教师是研究算法 closer_than_friend
-        //（用 8 目标距离 + 8 友机距离）。全程 mix=1，避免 REINFORCE 崩到全部弃权。
-        policy.set_teacher_mix(1.0);
-        let round_seed = seed.wrapping_add(i as u64);
-        let metrics = simulate_round(&policy, &cfg, i, round_seed)?;
-        policy.finish_episode(&metrics, lr);
-        if i == 0 || (i + 1) % 10 == 0 || i + 1 == train_rounds {
-            println!(
-                "train round {:>3}/{} seed={} killed={} mean_survival={:.4} mean_ops={:.1} decisions={}",
-                i + 1,
-                train_rounds,
-                round_seed,
-                metrics.enemies_neutralized,
-                metrics.mean_survival_s,
-                metrics.mean_compute_ops,
-                metrics.decision_count
-            );
+    let stagger = match formation.as_str() {
+        "staggered" | "stagger" => true,
+        "aligned" | "abreast" => false,
+        other => {
+            return Err(RunError::Invariant(format!(
+                "formation must be aligned or staggered, got {other}"
+            )));
         }
-        train_rows.push(metrics);
-    }
-    policy.end_training();
-    policy
-        .save(&model)
-        .map_err(|e| RunError::Invariant(format!("save model: {e}")))?;
+    };
+    let mut cfg = SimConfig::default();
+    cfg.stagger_rows = stagger;
+    let cfg = cfg.validated()?;
     println!(
-        "training finished in {:.1}s, weights -> {}",
-        train_t0.elapsed().as_secs_f64(),
+        "experiment formation={formation} stagger_rows={stagger} seed={seed} train={train_rounds} eval={eval_rounds} lr={lr} skip_train={skip_train} model={}",
         model.display()
     );
+
+    let mut policy = if skip_train {
+        TransformerPolicy::load_or_new(&model, seed)
+    } else {
+        TransformerPolicy::new(seed)
+    };
+    let mut train_rows = Vec::new();
+    if !skip_train {
+        policy.set_name("transformer_train");
+        policy.set_greedy(false);
+        policy.set_temperature(1.2);
+        policy.set_teacher_mix(0.0);
+        let t_end = cfg.path_length_m() / cfg.speed_m_s;
+        let dt = cfg.dt_s;
+        let n_e = cfg.enemy_count as f32;
+        println!("shared Transformer: 12 drones query one weight set each tick");
+        println!("per-tick REINFORCE on CPU (rayon): team reward = -alive*dt/N + kills*(T_end-t)/N");
+        let train_t0 = Instant::now();
+        for i in 0..train_rounds {
+            policy.begin_episode();
+            let round_seed = seed.wrapping_add(i as u64);
+            let mut world = World::new(cfg.clone(), round_seed)?;
+            let mut ops = Vec::new();
+            while !world.is_finished() {
+                policy.begin_step();
+                let alive_before = world.enemies().iter().filter(|e| e.is_alive()).count();
+                let events = world.step(&policy);
+                let mut killers = Vec::new();
+                let mut kills = 0u32;
+                for ev in &events {
+                    match ev {
+                        SimEvent::Decision { compute_ops, .. } => ops.push(*compute_ops),
+                        SimEvent::Neutralized { by, .. } => {
+                            killers.push(*by);
+                            kills += 1;
+                        }
+                        _ => {}
+                    }
+                }
+                let remain = (t_end - world.sim_time_s()).max(0.0) as f32;
+                let reward =
+                    -(alive_before as f32) * (dt as f32) / n_e + (kills as f32) * remain / n_e;
+                policy.finish_step(reward, &killers, lr);
+            }
+            let metrics = compute_round_metrics(&world, i, round_seed, ops);
+            if i == 0 || (i + 1) % 10 == 0 || i + 1 == train_rounds {
+                println!(
+                    "train round {:>3}/{} seed={} killed={} mean_survival={:.4} mean_ops={:.1} decisions={}",
+                    i + 1,
+                    train_rounds,
+                    round_seed,
+                    metrics.enemies_neutralized,
+                    metrics.mean_survival_s,
+                    metrics.mean_compute_ops,
+                    metrics.decision_count
+                );
+            }
+            train_rows.push(metrics);
+        }
+        policy.end_training();
+        policy
+            .save(&model)
+            .map_err(|e| RunError::Invariant(format!("save model: {e}")))?;
+        println!(
+            "training finished in {:.1}s, weights -> {}",
+            train_t0.elapsed().as_secs_f64(),
+            model.display()
+        );
+    }
 
     policy.set_name("transformer");
     policy.set_greedy(true);
@@ -201,13 +269,29 @@ fn experiment(
         eval_seed,
         None,
     )?;
+    println!("eval nearest_in_range (greedy), {eval_rounds} rounds, base_seed={eval_seed}");
+    let g_eval = run_session(
+        &mut store,
+        &NearestInRange,
+        &cfg,
+        eval_rounds,
+        eval_seed,
+        None,
+    )?;
 
-    write_metrics_csv(&out_dir.join("results/train_transformer.csv"), "transformer_train", &train_rows)?;
+    if !train_rows.is_empty() {
+        write_metrics_csv(&out_dir.join("results/train_transformer.csv"), "transformer_train", &train_rows)?;
+    }
     write_metrics_csv(&out_dir.join("results/eval_transformer.csv"), "transformer", &t_eval)?;
     write_metrics_csv(
         &out_dir.join("results/eval_closer_than_friend.csv"),
         "closer_than_friend",
         &r_eval,
+    )?;
+    write_metrics_csv(
+        &out_dir.join("results/eval_nearest_in_range.csv"),
+        "nearest_in_range",
+        &g_eval,
     )?;
     write_compare_plots(&t_eval, &r_eval, &out_dir)?;
 
@@ -235,6 +319,18 @@ fn experiment(
         mean(r_eval.iter().map(|m| m.mean_compute_ops), n),
         mean(
             r_eval
+                .iter()
+                .map(|m| m.mean_compute_ops * m.decision_count as f64),
+            n
+        )
+    );
+    println!(
+        "nearest_in_range    killed_mean={:.2}  survival_mean={:.4}  ops_per_select={:.1}  total_ops_mean={:.0}",
+        mean(g_eval.iter().map(|m| m.enemies_neutralized as f64), n),
+        mean(g_eval.iter().map(|m| m.mean_survival_s), n),
+        mean(g_eval.iter().map(|m| m.mean_compute_ops), n),
+        mean(
+            g_eval
                 .iter()
                 .map(|m| m.mean_compute_ops * m.decision_count as f64),
             n

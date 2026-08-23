@@ -57,9 +57,12 @@ def fig_battlefield():
     # disk
     d.ellipse([xy(-R, R)[0], xy(-R, R)[1], xy(R, -R)[0], xy(R, -R)[1]], outline="#111", width=4)
 
-    # rails
-    xs = [-200, -120, -40, 40, 120, 200]
-    D = 80.0
+    # 12 staggered rails on [-R, R]; lead even, trail odd
+    n_slots = 12
+    xs_all = [-R + i * (2 * R) / (n_slots - 1) for i in range(n_slots)]
+    xs_lead = xs_all[0::2]
+    xs_trail = xs_all[1::2]
+    D = 50.0
     y_lead = -R - D
     y_trail = y_lead - 40
     rng = random.Random(42)
@@ -78,8 +81,9 @@ def fig_battlefield():
         s = 16
         d.polygon([(px, py - s), (px - s * 0.7, py + s * 0.6), (px + s * 0.7, py + s * 0.6)], fill=color)
 
-    for x in xs:
+    for x in xs_lead:
         triangle(x, y_lead, "#15803d", detect=True)
+    for x in xs_trail:
         triangle(x, y_trail, "#4d7c0f", detect=False)
 
     ftitle = font(36, True)
@@ -94,7 +98,7 @@ def fig_battlefield():
     d.polygon([(70, legend_y + 110), (58, legend_y + 130), (82, legend_y + 130)], fill="#4d7c0f")
     d.text((90, legend_y + 106), "后排 6 架（排距 40 m，第二波一次性齐射）", font=fbody, fill="#111")
     d.text((720, legend_y + 16), "蓝框：杀伤矩形 2R×2R，圆内切其中", font=fbody, fill="#1d4ed8")
-    d.text((720, legend_y + 66), "航线 x∈[-R,R] 均分 6 轨，横向半间距 40 m < D", font=fbody, fill="#111")
+    d.text((720, legend_y + 66), "两排错开：12 条航线均分直径，后排落在先导排缝隙", font=fbody, fill="#111")
     d.text((720, legend_y + 106), "盘内任一点必落入某机探测带（完美包含）", font=fbody, fill="#111")
     save(img, "battlefield_schematic.png")
 
@@ -123,43 +127,52 @@ def _box_stats(vals):
 def fig_compare_from_csv():
     t = read_eval_csv(ROOT / "results" / "eval_transformer.csv")
     r = read_eval_csv(ROOT / "results" / "eval_closer_than_friend.csv")
+    g = read_eval_csv(ROOT / "results" / "eval_nearest_in_range.csv")
     if not t or not r:
         print("eval csv missing, skip compare png")
         return None
-    ts = [float(x["mean_survival_s"]) for x in t]
-    rs = [float(x["mean_survival_s"]) for x in r]
-    to = [float(x["total_compute_ops"]) for x in t]
-    ro = [float(x["total_compute_ops"]) for x in r]
-    tk = [float(x["killed"]) for x in t]
-    rk = [float(x["killed"]) for x in r]
-    fig_survival_box(ts, rs)
-    fig_ops_box(to, ro)
-    fig_killed_box(tk, rk)
-    return {
-        "t_surv_mean": sum(ts) / len(ts),
-        "r_surv_mean": sum(rs) / len(rs),
-        "t_ops_mean": sum(to) / len(to),
-        "r_ops_mean": sum(ro) / len(ro),
-        "t_kill_mean": sum(tk) / len(tk),
-        "r_kill_mean": sum(rk) / len(rk),
-        "n": len(ts),
-    }
+
+    def col(rows, k):
+        return [float(x[k]) for x in rows]
+
+    series = [
+        ("贪心 nearest_in_range", g, "#16a34a") if g else None,
+        ("近邻涌现规则", r, "#dc2626"),
+        ("Transformer", t, "#2563eb"),
+    ]
+    series = [s for s in series if s and s[1]]
+    names = [s[0] for s in series]
+    colors = [s[2] for s in series]
+    surv = [col(s[1], "mean_survival_s") for s in series]
+    ops = [col(s[1], "total_compute_ops") for s in series]
+    killed = [col(s[1], "killed") for s in series]
+    _draw_boxes("30 轮评估：目标平均存活时间分布", "mean survival (s)", surv, names, colors, False, "survival_compare.png")
+    _draw_boxes("30 轮评估：每轮总计算量（compute_ops）", "total compute_ops / round", ops, names, colors, True, "compute_ops_compare.png")
+    _draw_boxes("30 轮评估：中和数分布（上限 12）", "enemies neutralized", killed, names, colors, False, "killed_compare.png")
+    out = {"n": len(t)}
+    for key, rows in [("t", t), ("r", r), ("g", g)]:
+        if not rows:
+            continue
+        out[f"{key}_surv_mean"] = sum(col(rows, "mean_survival_s")) / len(rows)
+        out[f"{key}_ops_mean"] = sum(col(rows, "total_compute_ops")) / len(rows)
+        out[f"{key}_kill_mean"] = sum(col(rows, "killed")) / len(rows)
+        out[f"{key}_step_ops"] = sum(col(rows, "mean_compute_ops")) / len(rows)
+    return out
 
 
-def _draw_two_boxes(title, ylabel, a, b, names, colors, logy=False, fname="x.png"):
-    W, H = 1400, 900
+def _draw_boxes(title, ylabel, series_list, names, colors, logy=False, fname="x.png"):
+    W, H = 1500, 900
     img = Image.new("RGB", (W, H), "#fafafa")
     d = ImageDraw.Draw(img)
-    left, top, right, bot = 140, 90, 80, 120
+    left, top, right, bot = 140, 90, 80, 130
     pw, ph = W - left - right, H - top - bot
     d.rectangle([left, top, left + pw, top + ph], fill="white", outline="#333")
     d.text((W // 2, 28), title, font=font(32, True), fill="#111", anchor="mt")
-    vals = a + b
+    vals = [v for s in series_list for v in s]
     ymin, ymax = min(vals), max(vals)
     if logy:
-        ymin = max(min(vals), 1.0)
+        ymin = max(min(vals), 1.0) / 1.3
         ymax = max(vals) * 1.3
-        ymin = ymin / 1.3
 
         def ymap(v):
             v = max(v, ymin)
@@ -171,9 +184,10 @@ def _draw_two_boxes(title, ylabel, a, b, names, colors, logy=False, fname="x.png
         def ymap(v):
             return top + ph * (1 - (v - ymin) / (ymax - ymin))
 
-    for i, (series, name, color) in enumerate(zip((a, b), names, colors)):
+    n = max(len(series_list), 1)
+    for i, (series, name, color) in enumerate(zip(series_list, names, colors)):
         st = _box_stats(series)
-        cx = left + pw * (0.28 + i * 0.44)
+        cx = left + pw * (i + 0.5) / n
         bw = pw * 0.18
         d.line([(cx, ymap(st["min"])), (cx, ymap(st["max"]))], fill=color, width=3)
         y1, y3 = ymap(st["q1"]), ymap(st["q3"])
@@ -183,47 +197,11 @@ def _draw_two_boxes(title, ylabel, a, b, names, colors, logy=False, fname="x.png
         for k, v in enumerate(series):
             dx = (k * 13) % int(bw * 0.6) - bw * 0.3
             d.ellipse([cx + dx - 4, ymap(v) - 4, cx + dx + 4, ymap(v) + 4], fill=color)
-        d.text((cx, top + ph + 24), name, font=font(24, True), fill=color, anchor="mt")
-        d.text((cx, top + ph + 58), f"均值 {st['mean']:.3f}", font=font(20), fill="#333", anchor="mt")
+        d.text((cx, top + ph + 24), name, font=font(22, True), fill=color, anchor="mt")
+        d.text((cx, top + ph + 58), f"mean {st['mean']:.3f}", font=font(18), fill="#333", anchor="mt")
 
     d.text((left + 10, top + 8), ylabel, font=font(18), fill="#555")
     save(img, fname)
-
-
-def fig_survival_box(ts, rs):
-    _draw_two_boxes(
-        "30 轮评估：目标平均存活时间分布",
-        "mean survival (s)",
-        ts, rs,
-        ["Transformer（机载 AI 对照）", "近邻涌现规则 closer_than_friend"],
-        ["#2563eb", "#dc2626"],
-        False,
-        "survival_compare.png",
-    )
-
-
-def fig_ops_box(to, ro):
-    _draw_two_boxes(
-        "30 轮评估：每轮总计算量（compute_ops）",
-        "total compute_ops / round",
-        to, ro,
-        ["Transformer", "近邻涌现规则"],
-        ["#2563eb", "#dc2626"],
-        True,
-        "compute_ops_compare.png",
-    )
-
-
-def fig_killed_box(tk, rk):
-    _draw_two_boxes(
-        "30 轮评估：中和数分布（上限 12）",
-        "enemies neutralized",
-        tk, rk,
-        ["Transformer", "近邻涌现规则"],
-        ["#2563eb", "#dc2626"],
-        False,
-        "killed_compare.png",
-    )
 
 
 def paste_vertical_text(base: Image.Image, text: str, cx: int, cy: int, fnt, fill="#333"):
@@ -324,24 +302,31 @@ def _paired_gaussian(a, b):
     m = sum(d) / n
     s = (sum((x - m) ** 2 for x in d) / (n - 1)) ** 0.5
     se = s / math.sqrt(n)
-    z = m / se
-    p_two = 2.0 * (1.0 - _phi(abs(z)))
-    p_one = 1.0 - _phi(z)  # H1: mean(a-b) > 0
+    z = 0.0 if se == 0.0 else m / se
+    p_two = 1.0 if se == 0.0 else 2.0 * (1.0 - _phi(abs(z)))
+    p_one = 1.0 if se == 0.0 else 1.0 - _phi(z)
     return d, m, s, se, z, p_two, p_one
 
 
 def fig_pvalue():
     t = read_eval_csv(ROOT / "results" / "eval_transformer.csv")
     r = read_eval_csv(ROOT / "results" / "eval_closer_than_friend.csv")
+    g = read_eval_csv(ROOT / "results" / "eval_nearest_in_range.csv")
     if not t or not r:
         print("eval csv missing, skip pvalue fig")
         return
     ts = [float(x["mean_survival_s"]) for x in t]
     rs = [float(x["mean_survival_s"]) for x in r]
+    gs = [float(x["mean_survival_s"]) for x in g] if g else []
     tk = [float(x["killed"]) for x in t]
     rk = [float(x["killed"]) for x in r]
     ds, m, s, se, z, p_two, p_one = _paired_gaussian(ts, rs)
-    dk, mk, sk, sek, zk, pk2, pk1 = _paired_gaussian(tk, rk)
+    _dk, mk, _sk, _sek, zk, pk2, _pk1 = _paired_gaussian(tk, rk)
+    zg, pg2, pg1 = 0.0, 1.0, 1.0
+    zgt, pgt = 0.0, 1.0
+    if gs:
+        _d, _m, _s, _se, zg, pg2, pg1 = _paired_gaussian(gs, rs)
+        _d, _m, _s, _se, zgt, pgt, _ = _paired_gaussian(gs, ts)
     # TOST |mu|<0.5 s
     z_low = (m - (-0.5)) / se
     z_high = (0.5 - m) / se
@@ -403,21 +388,18 @@ def fig_pvalue():
 
     box_x, box_y = 1020, 100
     lines = [
-        "高斯配对 z 检验  n=30",
-        f"mean(Delta) = {m:.4f} s",
-        f"sd(Delta) = {s:.4f} s",
-        f"z = {z:.3f}",
-        f"two-sided p = {p_two:.3f}",
-        f"one-sided p (rule better) = {p_one:.3f}",
+        "paired Gaussian z, n=30",
+        "Delta = TF - rule (survival s)",
+        f"mean = {m:.3f}  z = {z:.2f}",
+        f"two-sided p = {p_two:.3g}",
         "",
-        "TOST |mean| < 0.5 s",
-        "p_TOST < 1e-12",
+        f"kills TF-rule  z={zk:.2f} p={pk2:.3g}",
         "",
-        f"kills  z = {zk:.3f}",
-        f"two-sided p = {pk2:.3f}",
+        f"greedy-rule surv p={pg2:.3g}",
+        f"greedy-TF   surv p={pgt:.3g}",
         "",
-        "29/30 rounds: rule lower survival",
-        "28/30 rounds: same kill count",
+        "shared TF: 12 drones, 1 net",
+        "CPU rayon, no GPU",
     ]
     d.rectangle([box_x - 16, box_y - 16, W - 30, box_y + 28 * len(lines) + 10], fill="#fff", outline="#ddd")
     for i, line in enumerate(lines):

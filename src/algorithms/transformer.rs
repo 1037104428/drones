@@ -14,12 +14,13 @@ use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
 use rand::rngs::StdRng;
+use rayon::prelude::*;
 use rand::{Rng, SeedableRng};
 use serde::{Deserialize, Serialize};
 
 use crate::algorithm::{SelectResult, TargetingAlgorithm, TargetingInput};
 use crate::contact::{MAX_DRONE_CONTACTS, MAX_TARGET_CONTACTS};
-use crate::ids::EnemyId;
+use crate::ids::{DroneId, EnemyId};
 use crate::metrics::RoundMetrics;
 
 pub const N_ENEMY: usize = MAX_TARGET_CONTACTS;
@@ -97,6 +98,27 @@ impl Weights {
             },
         }
     }
+
+    fn add_from(&mut self, other: &Weights) {
+        fn add(a: &mut [f32], b: &[f32]) {
+            for (x, y) in a.iter_mut().zip(b) {
+                *x += *y;
+            }
+        }
+        add(&mut self.w_in, &other.w_in);
+        add(&mut self.b_in, &other.b_in);
+        add(&mut self.w_pos, &other.w_pos);
+        add(&mut self.wq, &other.wq);
+        add(&mut self.wk, &other.wk);
+        add(&mut self.wv, &other.wv);
+        add(&mut self.wo, &other.wo);
+        add(&mut self.w1, &other.w1);
+        add(&mut self.b1, &other.b1);
+        add(&mut self.w2, &other.w2);
+        add(&mut self.b2, &other.b2);
+        add(&mut self.w_out, &other.w_out);
+        add(&mut self.b_out, &other.b_out);
+    }
 }
 
 struct Adam {
@@ -119,7 +141,7 @@ struct Step {
     feat: [f32; N_TOKEN * D_IN],
     valid_enemy: [bool; N_ENEMY],
     action: usize,
-    supervised: bool,
+    drone: DroneId,
 }
 
 pub struct TransformerPolicy {
@@ -191,6 +213,10 @@ impl TransformerPolicy {
         self.greedy = greedy;
     }
 
+    pub fn set_temperature(&mut self, t: f32) {
+        self.temperature = t.max(0.05);
+    }
+
     /// Probability of cloning `CloserThanFriend` this episode (imitation warm-start).
     pub fn set_teacher_mix(&self, p: f32) {
         *self.teacher_mix.lock().unwrap() = p.clamp(0.0, 1.0);
@@ -223,10 +249,75 @@ impl TransformerPolicy {
         self.steps.lock().unwrap().clear();
     }
 
+    /// Clear the per-tick buffer so this `World::step` is a parallel update batch.
+    pub fn begin_step(&self) {
+        self.steps.lock().unwrap().clear();
+    }
+
     pub fn end_training(&self) {
         *self.train_enabled.lock().unwrap() = false;
         *self.teacher_mix.lock().unwrap() = 0.0;
         self.steps.lock().unwrap().clear();
+    }
+
+    /// One REINFORCE step on **all** drones that acted in the last tick (parallel batch).
+    /// `reward` is the shared team signal (mean-survival increment). Killers get `+1`.
+    pub fn finish_step(&self, reward: f32, killers: &[DroneId], lr: f32) {
+        let steps = {
+            let mut g = self.steps.lock().unwrap();
+            std::mem::take(&mut *g)
+        };
+        if steps.is_empty() {
+            return;
+        }
+        let mut baseline = self.baseline.lock().unwrap();
+        if *baseline == 0.0 {
+            *baseline = reward;
+        } else {
+            *baseline = 0.95 * *baseline + 0.05 * reward;
+        }
+        let team_adv = reward - *baseline;
+        drop(baseline);
+
+        let n = steps.len() as f32;
+        let w = self.w.lock().unwrap().clone();
+        let killers = killers.to_vec();
+        let parts: Vec<Weights> = steps
+            .par_iter()
+            .map(|s| {
+                let eligible = s.valid_enemy.iter().any(|v| *v);
+                let fired = s.action < N_ENEMY
+                    && s.valid_enemy.get(s.action).copied().unwrap_or(false);
+                let extra = if killers.iter().any(|k| *k == s.drone) {
+                    1.5
+                } else if fired {
+                    // Kill credit arrives only after T_kill; without this,
+                    // fire and abstain get the same team r_t and the policy
+                    // collapses to always-abstain.
+                    0.35
+                } else if eligible {
+                    -0.2
+                } else {
+                    0.0
+                };
+                let adv = team_adv + extra;
+                let (logits, cache, _) = forward(&w, &s.feat, &s.valid_enemy);
+                let mut d_logits = d_nll_logsoftmax(&logits, s.action, adv);
+                add_entropy_grad(&mut d_logits, &logits, 0.03);
+                let mut local = Weights::zeros();
+                backward(&w, &cache, &s.feat, &s.valid_enemy, &mut d_logits, &mut local);
+                local
+            })
+            .collect();
+        let mut g = Weights::zeros();
+        for p in &parts {
+            g.add_from(p);
+        }
+        scale_grads(&mut g, 1.0 / n.max(1.0));
+        clip_grads(&mut g, 1.0);
+        let mut adam = self.adam.lock().unwrap();
+        let mut w = self.w.lock().unwrap();
+        adam_step(&mut w, &mut g, &mut adam, lr);
     }
 
     /// REINFORCE update from the just-finished round.
@@ -269,16 +360,7 @@ impl TransformerPolicy {
             for &i in &idx {
                 let s = &steps[i];
                 let (logits, cache, _) = forward(&w, &s.feat, &s.valid_enemy);
-                let step_adv = if s.supervised {
-                    if s.action < N_ENEMY {
-                        3.0
-                    } else {
-                        1.0
-                    }
-                } else {
-                    adv
-                };
-                let mut d_logits = d_nll_logsoftmax(&logits, s.action, step_adv);
+                let mut d_logits = d_nll_logsoftmax(&logits, s.action, adv);
                 backward(&w, &cache, &s.feat, &s.valid_enemy, &mut d_logits, &mut g);
             }
         }
@@ -563,6 +645,38 @@ fn d_nll_logsoftmax(logits: &[f32], action: usize, adv: f32) -> Vec<f32> {
         d[i] = -adv * (delta - p[i]);
     }
     d
+}
+
+/// Maximize entropy: L += -β H, so g += β p (log p + H).
+fn add_entropy_grad(d: &mut [f32], logits: &[f32], beta: f32) {
+    if beta <= 0.0 {
+        return;
+    }
+    let mut m = logits[0];
+    for &x in logits.iter().skip(1) {
+        if x > m {
+            m = x;
+        }
+    }
+    let mut p = vec![0.0f32; logits.len()];
+    let mut z = 0.0f32;
+    for i in 0..logits.len() {
+        p[i] = (logits[i] - m).exp();
+        z += p[i];
+    }
+    let inv = 1.0 / z.max(1e-12);
+    let mut h = 0.0f32;
+    for pi in p.iter_mut() {
+        *pi *= inv;
+        if *pi > 1e-12 {
+            h -= *pi * pi.ln();
+        }
+    }
+    for i in 0..d.len() {
+        if p[i] > 1e-12 {
+            d[i] += beta * p[i] * (p[i].ln() + h);
+        }
+    }
 }
 
 fn gemm_da(a: &[f32], b: &[f32], dc: &[f32], m: usize, k: usize, n: usize, da: &mut [f32], db: &mut [f32]) {
@@ -877,25 +991,11 @@ impl TargetingAlgorithm for TransformerPolicy {
             let w = self.w.lock().unwrap();
             forward(&w, &feat, &valid)
         };
-        let mix = *self.teacher_mix.lock().unwrap();
-        let teacher_action = {
-            let t = crate::algorithms::CloserThanFriend.select(input);
-            match t.target {
-                Some(id) => ids.iter().position(|&x| x == Some(id)).unwrap_or(N_ENEMY),
-                None => N_ENEMY,
-            }
-        };
-        let mut supervised = false;
         let mut action = if self.greedy {
             argmax(&logits)
         } else {
             let mut rng = self.rng.lock().unwrap();
-            if rng.gen::<f32>() < mix {
-                supervised = true;
-                teacher_action
-            } else {
-                logsoftmax_sample(&logits, &mut *rng, self.temperature)
-            }
+            logsoftmax_sample(&logits, &mut *rng, self.temperature)
         };
         if action < N_ENEMY && !valid[action] {
             action = N_ENEMY; // abstain
@@ -907,8 +1007,6 @@ impl TargetingAlgorithm for TransformerPolicy {
                     Some(owner) => owner == input.self_id,
                 }
         });
-        // Skip "empty sky" ticks (teacher always abstains). Train only when a shot is possible
-        // so the net learns fire-vs-hold rather than collapsing to always-abstain.
         if *self.train_enabled.lock().unwrap()
             && input.current_engagement.is_none()
             && any_eligible
@@ -917,7 +1015,7 @@ impl TargetingAlgorithm for TransformerPolicy {
                 feat,
                 valid_enemy: valid,
                 action,
-                supervised,
+                drone: input.self_id,
             });
         }
         let target = if action < N_ENEMY { ids[action] } else { None };

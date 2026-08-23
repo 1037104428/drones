@@ -23,8 +23,8 @@ pub use drone::{Drone, DroneState};
 pub use enemy::{Enemy, EnemyState};
 pub use experiment::{run_one, run_session, simulate_round, ExperimentRunner, RunSpec};
 pub use geom::{
-    disk_laterally_covered, every_disk_point_near_a_rail, rail_spacing, row_x_positions,
-    sample_point_in_disk, Position,
+    all_rail_x, disk_laterally_covered, every_disk_point_near_a_rail, formation_rows,
+    rail_spacing, row_x_positions, sample_point_in_disk, Position,
 };
 pub use ids::{DroneId, EnemyId};
 pub use metrics::RoundMetrics;

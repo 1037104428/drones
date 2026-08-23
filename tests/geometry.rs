@@ -1,8 +1,8 @@
 use approx::assert_relative_eq;
 use battlefield_sim::config::SimConfig;
 use battlefield_sim::geom::{
-    disk_laterally_covered, every_disk_point_near_a_rail, rail_spacing, row_x_positions,
-    sample_point_in_disk, Position,
+    disk_laterally_covered, every_disk_point_near_a_rail, formation_rows, rail_spacing,
+    row_x_positions, sample_point_in_disk, Position,
 };
 use rand::rngs::StdRng;
 use rand::SeedableRng;
@@ -51,11 +51,39 @@ fn row_x_positions_six_across_diameter() {
 }
 
 #[test]
+fn two_rows_are_staggered_on_twelve_rails() {
+    let rows = formation_rows(200.0, 6, 2);
+    assert_eq!(rows.len(), 2);
+    assert_eq!(rows[0].len(), 6);
+    assert_eq!(rows[1].len(), 6);
+    assert_relative_eq!(rows[0][0], -200.0, epsilon = 1e-12);
+    assert_relative_eq!(rows[1][0], -200.0 + 400.0 / 11.0, epsilon = 1e-9);
+    for x0 in &rows[0] {
+        for x1 in &rows[1] {
+            assert!((x0 - x1).abs() > 1.0, "rows should not share a rail");
+        }
+    }
+}
+
+#[test]
+fn aligned_rows_share_the_same_x() {
+    let mut cfg = SimConfig::default();
+    cfg.stagger_rows = false;
+    let cfg = cfg.validated().unwrap();
+    let world = battlefield_sim::World::new(cfg, 1).unwrap();
+    let lead: Vec<f64> = world.drones()[..6].iter().map(|d| d.pos.x).collect();
+    let trail: Vec<f64> = world.drones()[6..].iter().map(|d| d.pos.x).collect();
+    for (a, b) in lead.iter().zip(&trail) {
+        assert_relative_eq!(*a, *b, epsilon = 1e-12);
+    }
+}
+
+#[test]
 fn default_path_length_and_max_ticks() {
     let cfg = SimConfig::default().validated().unwrap();
-    // 2R + start_margin + end_margin + row_gap = 400+80+80+40 = 600
-    assert_relative_eq!(cfg.path_length_m(), 600.0, epsilon = 1e-12);
-    assert_eq!(cfg.max_ticks, 2500);
+    // 2R + start_margin + end_margin + row_gap = 400+50+50+40 = 540
+    assert_relative_eq!(cfg.path_length_m(), 540.0, epsilon = 1e-12);
+    assert_eq!(cfg.max_ticks, 2260);
     assert_eq!(cfg.kill_ticks(), 5);
     assert_relative_eq!(cfg.kill_rect_width_m(), 400.0, epsilon = 1e-12);
     assert_relative_eq!(cfg.rail_spacing_m(), 80.0, epsilon = 1e-12);

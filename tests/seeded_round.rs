@@ -9,9 +9,9 @@ use battlefield_sim::persist::{
 use battlefield_sim::{NearestInRange, World};
 
 /// Goldens from the first reference run after kill-zone containment defaults
-/// (D = start = end = 80 m, path 600 m → 2400 kinematic ticks).
-const GOLDEN_KILLED: u32 = 10; // updated after first post-geometry run
-const GOLDEN_TICKS: u64 = 2400;
+/// (D_tgt=50, margins 50 m, path 540 m → 2160 kinematic ticks).
+const GOLDEN_KILLED: u32 = 10;
+const GOLDEN_TICKS: u64 = 2160;
 const GOLDEN_DECISIONS: u64 = 1; // placeholder, pinned below if test prints
 const GOLDEN_MEAN_SURVIVAL: f64 = 0.0;
 const GOLDEN_MEAN_OPS: f64 = 0.0;

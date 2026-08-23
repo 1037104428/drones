@@ -2,13 +2,14 @@ use std::collections::BTreeMap;
 
 use rand::rngs::StdRng;
 use rand::SeedableRng;
+use rayon::prelude::*;
 
 use crate::algorithm::{SelectResult, TargetingAlgorithm, TargetingInput};
 use crate::config::{ConfigError, SimConfig};
 use crate::contact::{keep_nearest_drones, keep_nearest_targets, DroneContact, TargetContact};
 use crate::drone::{Drone, DroneState};
 use crate::enemy::{Enemy, EnemyState};
-use crate::geom::{row_x_positions, sample_point_in_disk, Position};
+use crate::geom::{formation_rows, sample_point_in_disk, Position};
 use crate::ids::{DroneId, EnemyId};
 
 #[derive(Clone, Copy, Debug)]
@@ -111,13 +112,22 @@ impl World {
             .map(|(i, pos)| Enemy::new(EnemyId(i as u32), pos))
             .collect();
 
-        let xs = row_x_positions(config.radius_m, config.drones_per_row);
+        let rows = if config.stagger_rows && config.drone_rows > 1 {
+            formation_rows(
+                config.radius_m,
+                config.drones_per_row,
+                config.drone_rows,
+            )
+        } else {
+            let xs = crate::geom::row_x_positions(config.radius_m, config.drones_per_row);
+            vec![xs; config.drone_rows as usize]
+        };
         let y_lead = -config.radius_m - config.start_margin_m;
         let mut drones = Vec::new();
         let mut next_id = 0u32;
-        for row in 0..config.drone_rows {
+        for (row, xs) in rows.iter().enumerate() {
             let y = y_lead - (row as f64) * config.row_gap_m;
-            for &x in &xs {
+            for &x in xs {
                 drones.push(Drone::new(
                     DroneId(next_id),
                     Position { x, y },
@@ -197,14 +207,45 @@ impl World {
         self.sense_all();
 
         let mut events = Vec::new();
-        let ids: Vec<DroneId> = self
-            .drones
-            .iter()
-            .filter(|d| d.is_live())
-            .map(|d| d.id)
+        // One shared policy for the whole formation: every live drone queries the
+        // same `algo` (same Transformer weights). Acquire stays DroneId order
+        // so the tick remains deterministic; the learner then updates those
+        // weights once from all drones' (state, action) pairs.
+        let snaps: Vec<(DroneId, Position, f64, Vec<TargetContact>, Vec<DroneContact>, Option<EnemyId>)> =
+            self.drones
+                .iter()
+                .filter(|d| d.is_live())
+                .map(|d| {
+                    (
+                        d.id,
+                        d.pos,
+                        d.detection_range,
+                        d.get_nearby_targets().to_vec(),
+                        d.get_nearby_drones().to_vec(),
+                        self.engagement_of(d.id),
+                    )
+                })
+                .collect();
+        let mut decisions: Vec<(DroneId, SelectResult)> = snaps
+            .par_iter()
+            .map(|(id, pos, range, targets, drones, eng)| {
+                let input = TargetingInput {
+                    self_id: *id,
+                    self_pos: *pos,
+                    tick,
+                    detection_range: *range,
+                    targets,
+                    drones,
+                    current_engagement: *eng,
+                };
+                (*id, algo.select(&input))
+            })
             .collect();
-        for id in ids {
-            let result = self.compute_for(id, algo, tick);
+        decisions.sort_by_key(|(id, _)| *id);
+        for (id, result) in decisions {
+            if let Some(d) = self.drone_mut(id) {
+                d.set_last_compute_ops(result.compute_ops);
+            }
             events.push(SimEvent::Decision {
                 tick,
                 drone: id,
@@ -242,53 +283,39 @@ impl World {
             .map(|e| (e.id, e.pos))
             .collect();
 
-        for d in &mut self.drones {
-            if !d.is_live() {
-                continue;
+        let friend_range = self.config.friend_detection_range_m;
+        let live_ids: Vec<(DroneId, Position, f64)> = self
+            .drones
+            .iter()
+            .filter(|d| d.is_live())
+            .map(|d| (d.id, d.pos, d.detection_range))
+            .collect();
+        let updates: Vec<_> = live_ids
+            .par_iter()
+            .map(|(id, pos, range)| {
+                let targets = keep_nearest_targets(alive.iter().filter(|(_, p)| {
+                    pos.distance(*p) <= *range
+                }).map(|(eid, p)| TargetContact {
+                    id: *eid,
+                    distance: pos.distance(*p),
+                    pos: *p,
+                    engaged_by: eng_snapshot.get(eid).copied(),
+                }));
+                let friends = keep_nearest_drones(live.iter().filter(|(oid, p)| {
+                    *oid != *id && pos.distance(*p) <= friend_range
+                }).map(|(oid, p)| DroneContact {
+                    id: *oid,
+                    distance: pos.distance(*p),
+                    pos: *p,
+                }));
+                (*id, targets, friends)
+            })
+            .collect();
+        for (id, targets, friends) in updates {
+            if let Some(d) = self.drone_mut(id) {
+                d.set_contacts(targets, friends);
             }
-            let targets = keep_nearest_targets(alive.iter().map(|(eid, pos)| TargetContact {
-                id: *eid,
-                distance: d.pos.distance(*pos),
-                pos: *pos,
-                engaged_by: eng_snapshot.get(eid).copied(),
-            }));
-            let friends = keep_nearest_drones(live.iter().filter(|(id, _)| *id != d.id).map(
-                |(id, pos)| DroneContact {
-                    id: *id,
-                    distance: d.pos.distance(*pos),
-                    pos: *pos,
-                },
-            ));
-            d.set_contacts(targets, friends);
         }
-    }
-
-    fn compute_for(
-        &mut self,
-        id: DroneId,
-        algo: &dyn TargetingAlgorithm,
-        tick: u64,
-    ) -> SelectResult {
-        let drone = self.drone(id).expect("live drone id from step");
-        let self_pos = drone.pos;
-        let detection_range = drone.detection_range;
-        let targets: Vec<TargetContact> = drone.get_nearby_targets().to_vec();
-        let drones: Vec<crate::contact::DroneContact> = drone.get_nearby_drones().to_vec();
-        let current_engagement = self.engagement_of(id);
-        let input = TargetingInput {
-            self_id: id,
-            self_pos,
-            tick,
-            detection_range,
-            targets: &targets,
-            drones: &drones,
-            current_engagement,
-        };
-        let result = algo.select(&input);
-        if let Some(d) = self.drone_mut(id) {
-            d.set_last_compute_ops(result.compute_ops);
-        }
-        result
     }
 
     fn try_acquire(

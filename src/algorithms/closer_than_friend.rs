@@ -1,10 +1,10 @@
 use crate::algorithm::{SelectResult, TargetingAlgorithm, TargetingInput};
 use crate::contact::TargetContact;
 
-/// 研究算法：
-/// 1. 最近友机距离
-/// 2. 最近（可中和）目标距离
-/// 3. 仅当最近目标 **严格近于** 最近友机时，中和该目标
+/// 研究算法（友机与目标同一套探测半径 D；8 是看得见的友军上限，不是全局知情）：
+/// 1. 最近**可见**友机距离（不在 D 内则该槽为空）
+/// 2. 最近可中和目标距离
+/// 3. 仅当最近目标 **严格近于** 最近可见友机时开火；看不见友机则退化为就近开火
 pub struct CloserThanFriend;
 
 impl TargetingAlgorithm for CloserThanFriend {

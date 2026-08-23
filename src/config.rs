@@ -16,7 +16,13 @@ pub struct SimConfig {
     pub row_gap_m: f64,
     pub speed_m_s: f64,
     pub dt_s: f64,
+    /// Seeker / EO range to ground targets (jammed radio does not extend this).
     pub detection_range_m: f64,
+    /// Visual / short-LOS range to other airframes. Larger than the seeker
+    /// because a nearby FPV is easier to see than a ground point, but still
+    /// not a shared datalink under jamming.
+    #[serde(default = "default_friend_detection")]
+    pub friend_detection_range_m: f64,
     pub t_kill_s: f64,
     pub start_margin_m: f64,
     pub end_margin_m: f64,
@@ -28,6 +34,17 @@ pub struct SimConfig {
     /// 若 JSON 省略或为 0，由 `validated()` 按公式填入。
     #[serde(default)]
     pub max_ticks: u64,
+    /// 后排落在先导排航线缝隙（砖砌错开）。false 则为并排同一组 x。
+    #[serde(default = "default_stagger")]
+    pub stagger_rows: bool,
+}
+
+fn default_stagger() -> bool {
+    false
+}
+
+fn default_friend_detection() -> f64 {
+    100.0
 }
 
 impl Default for SimConfig {
@@ -40,17 +57,19 @@ impl Default for SimConfig {
             row_gap_m: 40.0,
             speed_m_s: 25.0,
             dt_s: 0.01,
-            // Spacing of 6 rails on 2R is 80 m. D = 80 m makes neighbouring
-            // detection disks overlap past the mid-line, so the moving kill
-            // band is a solid 2R-wide rectangle that the circle is inscribed in.
-            detection_range_m: 80.0,
+            // Enemy seeker 50 m (> 40 m half-rail gap, disk still covered).
+            // Friend visual 100 m: row partner at 40 m and next rail at 80 m
+            // are visible; no radio track beyond that under jamming.
+            detection_range_m: 50.0,
+            friend_detection_range_m: 100.0,
             t_kill_s: 0.05,
-            start_margin_m: 80.0,
-            end_margin_m: 80.0,
+            start_margin_m: 50.0,
+            end_margin_m: 50.0,
             max_target_contacts: MAX_TARGET_CONTACTS,
             max_drone_contacts: MAX_DRONE_CONTACTS,
             expend_on_kill: true,
             max_ticks: 0,
+            stagger_rows: false,
         }
     }
 }
@@ -76,6 +95,7 @@ impl SimConfig {
         require_positive("speed_m_s", self.speed_m_s)?;
         require_positive("dt_s", self.dt_s)?;
         require_positive("detection_range_m", self.detection_range_m)?;
+        require_positive("friend_detection_range_m", self.friend_detection_range_m)?;
         require_positive("t_kill_s", self.t_kill_s)?;
         require_positive("row_gap_m", self.row_gap_m)?;
         require_non_negative("start_margin_m", self.start_margin_m)?;
@@ -149,11 +169,12 @@ impl SimConfig {
 
     /// True when the default +Y sweep's detection band covers every disk point.
     pub fn kill_zone_contains_disk(&self) -> bool {
-        crate::geom::disk_laterally_covered(
-            self.radius_m,
-            self.drones_per_row,
-            self.detection_range_m,
-        )
+        let n_slots = if self.stagger_rows {
+            self.drones_per_row * self.drone_rows.max(1)
+        } else {
+            self.drones_per_row
+        };
+        crate::geom::disk_laterally_covered(self.radius_m, n_slots, self.detection_range_m)
     }
 }
 

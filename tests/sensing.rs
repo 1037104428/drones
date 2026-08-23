@@ -66,15 +66,16 @@ fn self_not_in_friend_list() {
 }
 
 #[test]
-fn out_of_range_alive_still_in_memory() {
+fn out_of_range_target_not_in_memory() {
     let cfg = cfg_1row(1, 2).validated().unwrap();
     let positions = vec![Position { x: 0.0, y: 0.0 }];
     let mut world = World::with_enemy_positions(cfg, positions).unwrap();
     world.step(&NearestInRange);
     let mem = world.drone(DroneId(0)).unwrap().get_nearby_targets();
-    assert_eq!(mem.len(), 1);
-    assert_eq!(mem[0].id, EnemyId(0));
-    assert!(mem[0].distance > world.config.detection_range_m);
+    assert!(
+        mem.iter().all(|c| c.id != EnemyId(0)),
+        "targets outside D must not occupy the 8-slot memory"
+    );
 }
 
 #[test]
@@ -162,4 +163,18 @@ fn expended_friend_not_in_neighbor_list() {
     world.step(&NearestInRange);
     let friends = world.drone(DroneId(1)).unwrap().get_nearby_drones();
     assert!(friends.iter().all(|c| c.id != DroneId(0)));
+}
+
+#[test]
+fn friend_outside_detection_range_not_in_memory() {
+    let cfg = cfg_1row(1, 2).validated().unwrap();
+    assert!(cfg.detection_range_m < 2.0 * cfg.radius_m);
+    let mut world =
+        World::with_enemy_positions(cfg.clone(), vec![Position { x: 0.0, y: 0.0 }]).unwrap();
+    world.step(&NearestInRange);
+    let d0 = world.drone(DroneId(0)).unwrap();
+    let d1 = world.drone(DroneId(1)).unwrap();
+    assert!(d0.pos.distance(d1.pos) > cfg.detection_range_m);
+    assert!(d0.get_nearby_drones().is_empty());
+    assert!(d1.get_nearby_drones().is_empty());
 }
