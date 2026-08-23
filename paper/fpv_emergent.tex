@@ -296,6 +296,34 @@ $c_{\mathrm{airframe}}$ 与 $c_{\mathrm{warhead}}$ 已因消费电子下探；�
 
 相对并排格子，高斯进入使贪心/无通信贪心/网络场均中和从 10.23 升到 11.30：机群在圆心附近更密，50 m 光电重叠更好。无通信贪心与 \texttt{nearest\_in\_range} 在两种进场下均逐轮相同。规则仍显著更保守（少约 1.17 杀，$p\sim 10^{-8}$）。在高斯进入上同样打开 120 m 同拍通信后，三种算法的中和与存活再次与无通信逐轮相同（贪心/网络 11.30 与 14.092\,s，规则 10.13 与 15.274\,s）。高斯带来的约 +1 杀来自几何重叠，不是报文。结论对进场几何稳健：在 $D_{\mathrm{tgt}}=50\,\mathrm{m}$ 且不能转向的模型里，同拍通信不提高杀伤上限。
 
+\subsection{百米光电：接近弹数上限的近似最优}
+
+将寻的半径从 50 m 增至 $D_{\mathrm{tgt}}=100\,\mathrm{m}$（友军目视仍为 100 m），贪心就近开火、30 个同一种子：
+
+\begin{table}[H]
+\centering
+\caption{贪心，$D_{\mathrm{tgt}}=100\,\mathrm{m}$，30 轮}
+\label{tab:d100}
+\begin{tabular}{lcccc}
+\toprule
+进场 & 通信 & 场均中和（/12） & 平均存活 (s) \\
+\midrule
+并排 & 无 & 11.63 & 11.976 \\
+并排 & 同拍 150 m & 11.63 & 11.976 \\
+高斯 & 无 & 11.97 & 12.230 \\
+高斯 & 同拍 150 m & 11.97 & 12.232 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+高斯进入下 11.97/12 发命中，即几乎全部一次性弹都换成了一次中和；并排为 11.63/12。这已经贴近该模型的弹数上限：剩余未中和目标来自 20 对 12 的数量差，不是策略还没打完。存活从约 14 s 降到约 12 s，因为更早进入 100 m 圈、更早锁定。同拍通信仍不增加击杀——此时多数轮次已用尽 12 发，没有余弹可再分配。因此，在直飞、排他占锁、12 弹对 20 敌的约束下，\textbf{本地贪心 + 百米级光电}本身就是很好的近似最优；报文与神经网络都没有在上限附近再挤出可测的杀伤。
+
+\subsection{百米探测在压制条件下是否现实}
+
+50 m 是偏保守的地面点目标光电识别距离：低对比、烟尘、抖动都会把可锁定距离压短。100 m 则更接近廉价 FPV 摄像头对人员/车辆轮廓的典型工作点。消费级 CMOS 配 4--8 mm 镜头、720p 或模拟图传下，操作员在昼间对比尚可时，常在百米量级完成识别再俯冲；部分挂载热像的自杀式穿越机对人体的发现距离可到 200--400 m 量级。本仿真的「假想敌」是点目标，把 100 m 当作\emph{稳定锁定并进入 $T_{\mathrm{kill}}$} 的半径，而不是「隐约看见」，因此仍低于车辆热像的发现距离。
+
+关键是：100 m 仍然是\emph{本机光电}，不是被压制掉的远程数据链。圆盘直径 400 m，百米寻的只覆盖半径的一半，机群并不能「看见全场」。无线电压制切断的是机间共享目标表和飞手超视距引导；短距通视、短距图传和机载对比锁定仍可能存活。把 $D_{\mathrm{tgt}}$ 从 50 m 提到 100 m，对应的是标定更好的镜头与稳定，而不是假设电台突然畅通。若目标有伪装或夜暗无热像，50 m 那组结果更有代表性；若为未伪装车辆或热像寻的，100 m 并非虚高。两种半径下通信都不增加击杀，说明瓶颈在弹数与直飞几何，不在 120--150 m 的短距报锁。
+
 \begin{figure}[H]
   \centering
   \includegraphics[width=0.92\textwidth]{figures/pvalue_gaussian.png}
@@ -326,7 +354,7 @@ $c_{\mathrm{airframe}}$ 与 $c_{\mathrm{warhead}}$ 已因消费电子下探；�
   \label{fig:kill}
 \end{figure}
 
-需要强调：Transformer 是 12 机共享、从零逐步 REINFORCE 的产物，评估场均仍能中和 5.63 个目标，说明逐步强化学习走得通，只是走不赢贪心。把约 5000 倍算力花在弱于九次比较的策略上，正是一次性平台不该做的事。
+需要强调：Transformer 是 12 机共享、从零逐步 REINFORCE 的产物，在 50 m 光电下与贪心逐轮相同；把四个数量级的算力花在复现「取最小值」上，正是一次性平台不该做的事。百米光电下贪心已接近 12 发打满，近似最优来自传感器半径与弹数，不是来自通信或网络。
 
 \section{讨论}
 
@@ -344,14 +372,14 @@ $c_{\mathrm{airframe}}$ 与 $c_{\mathrm{warhead}}$ 已因消费电子下探；�
 
 \subsection{局限}
 
-仿真是二维匀速扫掠，敌方静止，探测为理想圆。真实 FPV 有姿态、风扰、图像识别虚警与飞手接管。这些因素对\emph{两种算法是共同的}：它们不改变“本地规则 vs 本地网络”的相对算力差，也不恢复超低 SNR 下的组网能力。若未来出现极低功耗、可忽略成本的模拟比较电路，规则仍可直接硬化；网络则仍需存储与乘加阵列。
+仿真是二维匀速扫掠，敌方静止，探测为理想圆。真实 FPV 有姿态、风扰、识别虚警与飞手接管。这些因素对三种算法是共同的：它们不改变本地规则与网络的算力差，也不让被压制的远程数据链复活。百米光电的现实性取决于目标对比与是否有热像，见上文；50 m 与 100 m 两档应视为区间，而不是单一真值。
 
 \section{结论}
 
 本文在杀伤区完美包含圆形战场的可复现平台上，对比了一次性 FPV 机群的两种本地瞄准算法。30 轮配对实验给出三点结论。
 
 \begin{enumerate}
-  \item \textbf{效能。} 并排下共享 Transformer、贪心与无通信贪心同为中和 10.23、存活 13.99\,s；近邻规则 9.80、14.39\,s。高斯进入下为 11.30 / 11.30 / 10.13 杀。12 机共用一套权重。
+  \item \textbf{效能。} 50 m 光电下，并排贪心/网络 10.23 杀，高斯 11.30 杀；近邻规则更保守。百米光电下贪心并排 11.63、高斯 11.97，已接近 12 发上限，是该模型很好的近似最优。同拍通信在两档半径下都不增加击杀。
   \item \textbf{成本。} 贪心约 1 ops，规则 5.7，网络 $4.53\times 10^{4}$。网络没有换来额外杀伤。
   \item \textbf{通信。} 超低 SNR 下有效信息的时延本身是稀缺品。三种算法都不依赖机间共享目标表；12 机共用一套 Transformer 权重，并不增加无线电载荷。
 \end{enumerate}
@@ -377,7 +405,10 @@ cargo run --release -- experiment \
 cargo run --release -- experiment --train-rounds 200 --eval-rounds 30 --seed 20260823
 cargo run --release -- experiment --ingress gaussian --train-rounds 200 --eval-rounds 30 --seed 20260823
 cargo run --release -- experiment --comms-range 120 --train-rounds 200 --eval-rounds 30 --seed 20260823
+cargo run --release -- run --rounds 30 --seed 20270823 --algo nearest_in_range --config configs/dtgt100.json
+cargo run --release -- run --rounds 30 --seed 20270823 --algo nearest_in_range --config configs/dtgt100_gaussian_comms.json
 \end{verbatim}
+百米光电 CSV 见 \texttt{results/dtgt100/} 与 \texttt{results/dtgt100\_gaussian/}。
 英文稿见 \texttt{fpv\_emergent\_en.pdf}。
 
 \begin{thebibliography}{9}

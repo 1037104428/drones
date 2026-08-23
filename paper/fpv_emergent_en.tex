@@ -132,7 +132,31 @@ Shared Transformer (retrained) & 11.30 & 14.092 & $4.530\times 10^4$ \\
 \end{tabular}
 \end{table}
 
-Greedy, no-comms greedy, and the net all rise from 10.23 to 11.30 kills (denser coverage near the origin); no-comms greedy again matches nearest-in-range seed-for-seed. Same-tick 120\,m radio on this ingress again matches the no-radio tables seed-for-seed. The friend rule remains more conservative ($p\sim 10^{-16}$ on survival). CSV: \texttt{results/gaussian/} (no radio) and \texttt{runs/gaussian\_comms/} (radio).
+Greedy, no-comms greedy, and the net all rise from 10.23 to 11.30 kills (denser coverage near the origin); no-comms greedy again matches nearest-in-range seed-for-seed. Same-tick 120\,m radio on this ingress again matches the no-radio tables seed-for-seed. The friend rule remains more conservative ($p\sim 10^{-16}$ on survival). CSV: \texttt{results/gaussian/} (no radio) and \texttt{results/gaussian\_comms/} (radio).
+
+\paragraph{100\,m seeker: near the shot budget.}
+Raising $D_{\mathrm{tgt}}$ to 100\,m (friend visual still 100\,m), greedy-only, 30 seeds:
+
+\begin{table}[H]
+\centering
+\caption{Greedy, $D_{\mathrm{tgt}}=100\,\mathrm{m}$, 30 rounds}
+\label{tab:d100}
+\begin{tabular}{lccc}
+\toprule
+Ingress & Radio & Kills / 12 & Mean survival (s) \\
+\midrule
+line-abreast & none & 11.63 & 11.976 \\
+line-abreast & 150\,m same-tick & 11.63 & 11.976 \\
+Gaussian & none & 11.97 & 12.230 \\
+Gaussian & 150\,m same-tick & 11.97 & 12.232 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Gaussian ingress expends 11.97 of 12 one-shot airframes as successful intercepts---essentially the munition budget. Line-abreast reaches 11.63. Residual live targets are the 20-versus-12 surplus, not unused drones. Survival drops from $\approx 14\,\mathrm{s}$ to $\approx 12\,\mathrm{s}$ because lock starts earlier. Radio still adds no kills: most rounds have already spent every shot. In this fly-straight, exclusive-lock model, \textbf{local greedy plus a 100\,m seeker is a strong near-optimum}; neither the net nor the radio squeezes more lethality near the cap.
+
+\paragraph{Is 100\,m realistic under jamming?}
+Fifty metres is a pessimistic lock range for a point-like ground target (dust, low contrast, vibration). One hundred metres is closer to what a cheap FPV CMOS (4--8\,mm, analog or 720p) can do on a person- or vehicle-sized outline in daylight. Thermal kits reported on one-way FPV often detect humans at 200--400\,m; we treat 100\,m as a \emph{stable lock} radius, so it remains below those discovery ranges. The disk diameter is 400\,m, so a 100\,m seeker is not omniscience---only a quarter of the diameter. Jamming kills long-range sharing and beyond-line-of-sight cueing; it need not kill short-range optics. Raising $D_{\mathrm{tgt}}$ from 50 to 100\,m is better glass and tracking, not a sudden clear radio. Camouflage or unaided night would pull the system back toward the 50\,m tables. In both regimes, short-range lock radio does not raise kills: the bottleneck is the 12-shot budget and the straight track, not a 120--150\,m status packet.
 
 \begin{figure}[H]
   \centering
@@ -175,7 +199,7 @@ Twelve drones sharing one net already give twelve times the gradient of a per-ai
 
 \section{Conclusion}
 
-A shared Transformer trained by per-tick REINFORCE on CPU learns greedy fire and does not outperform it, at $\sim 4.5\times 10^4$ times the ops, for both a 2$\times$6 line-abreast entry and a Gaussian blob entry. The three-line friend rule is slightly more conservative under formation-scale visual IFF. Ultra-low SNR forbids a richer state; expendability forbids an NPU. Code and CSV metrics: \url{https://github.com/1037104428/drones}.
+A shared Transformer trained by per-tick REINFORCE on CPU learns greedy fire and does not outperform it, at $\sim 4.5\times 10^4$ times the ops, for both a 2$\times$6 line-abreast entry and a Gaussian blob entry. At $D_{\mathrm{tgt}}=100\,\mathrm{m}$, greedy spends nearly all 12 shots (11.63--11.97). That is a strong near-optimum for this model; radio and the net do not improve it. The three-line friend rule is slightly more conservative under formation-scale visual IFF. Ultra-low SNR forbids a richer state; expendability forbids an NPU. Code and CSV metrics: \url{https://github.com/1037104428/drones}.
 
 \begin{verbatim}
 git clone https://github.com/1037104428/drones.git
