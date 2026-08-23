@@ -24,6 +24,8 @@ Transformer 用 **逐步 REINFORCE** 训练（不用模仿学习）：每一仿�
 cargo run --release -- experiment --train-rounds 200 --eval-rounds 30 --seed 20260823
 # 高斯进入（σx=70 m，σy=30 m）：
 cargo run --release -- experiment --ingress gaussian --train-rounds 200 --eval-rounds 30 --seed 20260823
+# 同拍通信 120 m（D_tgt=50 m 时结果与无通信相同）：
+cargo run --release -- experiment --comms-range 120 --train-rounds 200 --eval-rounds 30 --seed 20260823
 ```
 
 同一种子评估：贪心 `nearest_in_range`、无通信贪心 `greedy_no_comms`、近邻规则 `closer_than_friend`、强化学习 Transformer。

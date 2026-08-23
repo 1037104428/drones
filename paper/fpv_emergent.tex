@@ -107,7 +107,7 @@ FPV 的典型载荷是模拟图传加窄带遥控。电子对抗条件下，可�
 
 \subsection{本地传感}
 
-每机每拍只能感知圈内物体，8 是记忆上限不是全知。假想敌用光电/寻的半径 $D_{\mathrm{tgt}}=50\,\mathrm{m}$（无线电压制下不能靠数据链把远点送进座舱）；友军用目视/近距通视 $D_{\mathrm{fr}}=100\,\mathrm{m}$（编队里 40 m 排距、80 m 邻轨的机体仍看得见，但看不到更远的电台位置）。圈外目标与友机不入库。开火要求目标在 $D_{\mathrm{tgt}}$ 内。编队默认为两排并排。另可选高斯进入：机群从正南以二维正态散布飞入（$\sigma_x=70\,\mathrm{m}$，$\sigma_y=30\,\mathrm{m}$，机间距至少 8 m），模拟不整齐的实际进场。
+每机每拍只能感知圈内物体，8 是记忆上限不是全知。假想敌用光电/寻的半径 $D_{\mathrm{tgt}}=50\,\mathrm{m}$（无线电压制下不能靠数据链把远点送进座舱）；友军用目视/近距通视 $D_{\mathrm{fr}}=100\,\mathrm{m}$（编队里 40 m 排距、80 m 邻轨的机体仍看得见，但看不到更远的电台位置）。圈外目标与友机不入库。开火要求目标在 $D_{\mathrm{tgt}}$ 内。编队默认为两排并排。另可选高斯进入：机群从正南以二维正态散布飞入（$\sigma_x=70\,\mathrm{m}$，$\sigma_y=30\,\mathrm{m}$，机间距至少 8 m），模拟不整齐的实际进场。通信对照：无无线电时，锁定要到下一拍才出现在传感器里；有通信时，120 m 内队友在\emph{同一} $\mathrm{d}t$ 内听到新占锁并改打次近目标（\texttt{comms\_range\_m}=120）。
 
 \section{三种算法}
 
@@ -257,6 +257,8 @@ $c_{\mathrm{airframe}}$ 与 $c_{\mathrm{warhead}}$ 已因消费电子下探；�
 
 贪心与 Transformer 杀伤统计不可区分（学会了同一策略）。近邻规则显著更保守。算力上贪心约 1 ops、规则 5.7、网络 $4.5\times 10^4$。这正是装备论证需要的形态——\textbf{网络没有多打掉目标，只是贵了四个数量级}。
 
+同一套 30 个种子上，打开同拍通信（120 m）后，三种算法的场均中和与平均存活与无通信\textbf{逐轮相同}（并排：贪心/网络 10.23 与 13.989\,s，规则 9.80 与 14.386\,s）。原因是 $D_{\mathrm{tgt}}=50\,\mathrm{m}$ 下圈内很少同时出现第二个可打目标，本拍改打次近往往已经出圈。通信改的是同拍指派时序，不扩大光电半径。
+
 \subsection{高斯进入}
 
 将 2$\times$6 格子换成机群从正南以二维高斯进入：$x\sim\mathcal N(0,70^2)$，$y\sim\mathcal N(\mu_y,30^2)$，$\mu_y$ 在圆外南侧，任意两机间距至少 8 m。Transformer 在该分布上重新做 200 轮逐步 REINFORCE，再与另两种算法在同一 30 个种子上评估。CSV 见 \texttt{results/gaussian/}。
@@ -292,7 +294,7 @@ $c_{\mathrm{airframe}}$ 与 $c_{\mathrm{warhead}}$ 已因消费电子下探；�
 \end{tabular}
 \end{table}
 
-相对并排格子，高斯进入使贪心/无通信贪心/网络场均中和从 10.23 升到 11.30：机群在圆心附近更密，50 m 光电重叠更好。无通信贪心与 \texttt{nearest\_in\_range} 在两种进场下均逐轮相同。规则仍显著更保守（少约 1.17 杀，$p\sim 10^{-8}$），因为 $D_{\mathrm{fr}}=100\,\mathrm{m}$ 下近距友机更容易被看见。Transformer 再次与贪心逐轮相同。结论对进场几何稳健：零通信贪心已经是该传感器模型下的杀伤上限，网络没有多打掉目标。
+相对并排格子，高斯进入使贪心/无通信贪心/网络场均中和从 10.23 升到 11.30：机群在圆心附近更密，50 m 光电重叠更好。无通信贪心与 \texttt{nearest\_in\_range} 在两种进场下均逐轮相同。规则仍显著更保守（少约 1.17 杀，$p\sim 10^{-8}$）。在高斯进入上同样打开 120 m 同拍通信后，三种算法的中和与存活再次与无通信逐轮相同（贪心/网络 11.30 与 14.092\,s，规则 10.13 与 15.274\,s）。高斯带来的约 +1 杀来自几何重叠，不是报文。结论对进场几何稳健：在 $D_{\mathrm{tgt}}=50\,\mathrm{m}$ 且不能转向的模型里，同拍通信不提高杀伤上限。
 
 \begin{figure}[H]
   \centering
@@ -370,10 +372,11 @@ cargo test
 cargo run --release -- experiment \
   --train-rounds 200 --eval-rounds 30 --seed 20260823
 \end{verbatim}
-仓库中 \texttt{results/*.csv} 为并排评估（表~\ref{tab:res}），\texttt{results/gaussian/*.csv} 为高斯进入（表~\ref{tab:res-g}）。\texttt{models/transformer.json} 与 \texttt{models/transformer\_gaussian.json} 分别为两套进场上训练的共享权重。高斯进入复现：
+仓库中 \texttt{results/*.csv} 为并排、无通信评估（表~\ref{tab:res}），\texttt{results/gaussian/*.csv} 为高斯进入、无通信。有通信（120 m 同拍占锁）的复现将 \texttt{--comms-range 120} 加上即可，结果与无通信逐轮相同。\texttt{models/transformer.json} 与 \texttt{models/transformer\_gaussian.json} 为无通信进场上的共享权重。
 \begin{verbatim}
-cargo run --release -- experiment --ingress gaussian \
-  --train-rounds 200 --eval-rounds 30 --seed 20260823
+cargo run --release -- experiment --train-rounds 200 --eval-rounds 30 --seed 20260823
+cargo run --release -- experiment --ingress gaussian --train-rounds 200 --eval-rounds 30 --seed 20260823
+cargo run --release -- experiment --comms-range 120 --train-rounds 200 --eval-rounds 30 --seed 20260823
 \end{verbatim}
 英文稿见 \texttt{fpv\_emergent\_en.pdf}。
 

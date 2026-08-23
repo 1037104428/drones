@@ -111,7 +111,7 @@ rule $-$ Transformer & $+0.397$ & $+5.74$ & $9.7\times 10^{-9}$ \\
 \end{tabular}
 \end{table}
 
-The RL net matches greedy round-by-round (it learned to fire nearest-in-range). \texttt{greedy\_no\_comms} matches \texttt{nearest\_in\_range} on every seed: not seeing others' locks does not change kills under exclusive acquire. Without an immediate fire bonus, training collapsed to zero kills around round 90; shaping plus entropy keeps it at $\approx 10$ kills. The friend rule is significantly more conservative ($p=9.7\times 10^{-9}$) because $D_{\mathrm{fr}}=100\,\mathrm{m}$ always sees the trail partner at 40\,m. Compute: greedy $\approx 1$, rule $5.7$, Transformer $4.53\times 10^4$.
+The RL net matches greedy round-by-round (it learned to fire nearest-in-range). \texttt{greedy\_no\_comms} matches \texttt{nearest\_in\_range} on every seed: not seeing others' locks does not change kills under exclusive acquire. Repeating the three algorithms with same-tick lock radio (\texttt{comms\_range\_m}=120\,m, heard inside the same $\mathrm{d}t$) yields \emph{identical} per-seed kills and survival: at $D_{\mathrm{tgt}}=50\,\mathrm{m}$ a drone rarely has a second in-range target, so retargeting this tick does not add shots. Without an immediate fire bonus, training collapsed to zero kills around round 90; shaping plus entropy keeps it at $\approx 10$ kills. The friend rule is significantly more conservative ($p=9.7\times 10^{-9}$) because $D_{\mathrm{fr}}=100\,\mathrm{m}$ always sees the trail partner at 40\,m. Compute: greedy $\approx 1$, rule $5.7$, Transformer $4.53\times 10^4$.
 
 \paragraph{Gaussian ingress.}
 Twelve drones enter from the south as a 2D Gaussian blob ($\sigma_x=70\,\mathrm{m}$, $\sigma_y=30\,\mathrm{m}$, min separation 8\,m). The Transformer is retrained for 200 rounds on this ingress. Table~\ref{tab:res-g}.
@@ -132,7 +132,7 @@ Shared Transformer (retrained) & 11.30 & 14.092 & $4.530\times 10^4$ \\
 \end{tabular}
 \end{table}
 
-Greedy, no-comms greedy, and the net all rise from 10.23 to 11.30 kills (denser coverage near the origin); no-comms greedy again matches nearest-in-range seed-for-seed. The friend rule remains more conservative ($p\sim 10^{-16}$ on survival). CSV: \texttt{results/gaussian/}.
+Greedy, no-comms greedy, and the net all rise from 10.23 to 11.30 kills (denser coverage near the origin); no-comms greedy again matches nearest-in-range seed-for-seed. Same-tick 120\,m radio on this ingress again matches the no-radio tables seed-for-seed. The friend rule remains more conservative ($p\sim 10^{-16}$ on survival). CSV: \texttt{results/gaussian/} (no radio) and \texttt{runs/gaussian\_comms/} (radio).
 
 \begin{figure}[H]
   \centering

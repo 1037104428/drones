@@ -209,6 +209,31 @@ impl World {
         self.enemies.iter_mut().find(|e| e.id == id)
     }
 
+    fn contacts_with_live_locks(&self, drone_id: DroneId, comms: f64) -> Vec<TargetContact> {
+        let me = match self.drone(drone_id) {
+            Some(d) => d,
+            None => return Vec::new(),
+        };
+        let my_pos = me.pos;
+        let mut ts = me.get_nearby_targets().to_vec();
+        for t in &mut ts {
+            if let Some(eng) = self.engagements.get(&t.id) {
+                if eng.drone_id == drone_id {
+                    t.engaged_by = Some(eng.drone_id);
+                    continue;
+                }
+                let hear = self
+                    .drone(eng.drone_id)
+                    .map(|d| my_pos.distance(d.pos) <= comms)
+                    .unwrap_or(false);
+                if hear {
+                    t.engaged_by = Some(eng.drone_id);
+                }
+            }
+        }
+        ts
+    }
+
     pub fn engagement_of(&self, id: DroneId) -> Option<EnemyId> {
         self.engagements
             .values()
@@ -241,12 +266,62 @@ impl World {
         self.sense_all();
 
         let mut events = Vec::new();
-        // One shared policy for the whole formation: every live drone queries the
-        // same `algo` (same Transformer weights). Acquire stays DroneId order
-        // so the tick remains deterministic; the learner then updates those
-        // weights once from all drones' (state, action) pairs.
-        let snaps: Vec<(DroneId, Position, f64, Vec<TargetContact>, Vec<DroneContact>, Option<EnemyId>)> =
-            self.drones
+        let comms = self.config.comms_range_m;
+        if comms > 0.0 {
+            // Per-tick radio: sequential DroneId order so a lock is heard by
+            // teammates still in this same dt (not delayed to the next frame).
+            let ids: Vec<DroneId> = self
+                .drones
+                .iter()
+                .filter(|d| d.is_live())
+                .map(|d| d.id)
+                .collect();
+            for id in ids {
+                let (pos, range, drones, eng) = {
+                    let d = self.drone(id).unwrap();
+                    (
+                        d.pos,
+                        d.detection_range,
+                        d.get_nearby_drones().to_vec(),
+                        self.engagement_of(id),
+                    )
+                };
+                let targets = self.contacts_with_live_locks(id, comms);
+                let input = TargetingInput {
+                    self_id: id,
+                    self_pos: pos,
+                    tick,
+                    detection_range: range,
+                    targets: &targets,
+                    drones: &drones,
+                    current_engagement: eng,
+                };
+                let result = algo.select(&input);
+                if let Some(d) = self.drone_mut(id) {
+                    d.set_last_compute_ops(result.compute_ops);
+                }
+                events.push(SimEvent::Decision {
+                    tick,
+                    drone: id,
+                    target: result.target,
+                    compute_ops: result.compute_ops,
+                });
+                if self.engagement_of(id).is_none() {
+                    if let Some(tid) = result.target {
+                        let _ = self.try_acquire(id, tid, tick);
+                    }
+                }
+            }
+        } else {
+            let snaps: Vec<(
+                DroneId,
+                Position,
+                f64,
+                Vec<TargetContact>,
+                Vec<DroneContact>,
+                Option<EnemyId>,
+            )> = self
+                .drones
                 .iter()
                 .filter(|d| d.is_live())
                 .map(|d| {
@@ -260,35 +335,36 @@ impl World {
                     )
                 })
                 .collect();
-        let mut decisions: Vec<(DroneId, SelectResult)> = snaps
-            .par_iter()
-            .map(|(id, pos, range, targets, drones, eng)| {
-                let input = TargetingInput {
-                    self_id: *id,
-                    self_pos: *pos,
+            let mut decisions: Vec<(DroneId, SelectResult)> = snaps
+                .par_iter()
+                .map(|(id, pos, range, targets, drones, eng)| {
+                    let input = TargetingInput {
+                        self_id: *id,
+                        self_pos: *pos,
+                        tick,
+                        detection_range: *range,
+                        targets,
+                        drones,
+                        current_engagement: *eng,
+                    };
+                    (*id, algo.select(&input))
+                })
+                .collect();
+            decisions.sort_by_key(|(id, _)| *id);
+            for (id, result) in decisions {
+                if let Some(d) = self.drone_mut(id) {
+                    d.set_last_compute_ops(result.compute_ops);
+                }
+                events.push(SimEvent::Decision {
                     tick,
-                    detection_range: *range,
-                    targets,
-                    drones,
-                    current_engagement: *eng,
-                };
-                (*id, algo.select(&input))
-            })
-            .collect();
-        decisions.sort_by_key(|(id, _)| *id);
-        for (id, result) in decisions {
-            if let Some(d) = self.drone_mut(id) {
-                d.set_last_compute_ops(result.compute_ops);
-            }
-            events.push(SimEvent::Decision {
-                tick,
-                drone: id,
-                target: result.target,
-                compute_ops: result.compute_ops,
-            });
-            if self.engagement_of(id).is_none() {
-                if let Some(tid) = result.target {
-                    let _ = self.try_acquire(id, tid, tick);
+                    drone: id,
+                    target: result.target,
+                    compute_ops: result.compute_ops,
+                });
+                if self.engagement_of(id).is_none() {
+                    if let Some(tid) = result.target {
+                        let _ = self.try_acquire(id, tid, tick);
+                    }
                 }
             }
         }

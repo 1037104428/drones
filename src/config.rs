@@ -44,6 +44,10 @@ pub struct SimConfig {
     pub sigma_x_m: f64,
     #[serde(default = "default_sigma_y")]
     pub sigma_y_m: f64,
+    /// 0 = no radio. >0: each tick, drones within this range hear new locks
+    /// immediately (same-tick assignment), not on the next sensor frame.
+    #[serde(default)]
+    pub comms_range_m: f64,
 }
 
 fn default_ingress() -> String {
@@ -90,6 +94,7 @@ impl Default for SimConfig {
             ingress: default_ingress(),
             sigma_x_m: default_sigma_x(),
             sigma_y_m: default_sigma_y(),
+            comms_range_m: 0.0,
         }
     }
 }
@@ -129,6 +134,7 @@ impl SimConfig {
         }
         require_non_negative("start_margin_m", self.start_margin_m)?;
         require_non_negative("end_margin_m", self.end_margin_m)?;
+        require_non_negative("comms_range_m", self.comms_range_m)?;
 
         if self.enemy_count < 1 {
             return Err(ConfigError::InvalidFormation {

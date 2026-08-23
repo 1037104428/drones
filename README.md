@@ -25,6 +25,8 @@ The Transformer is trained with **per-tick REINFORCE** (no imitation): after eve
 cargo run --release -- experiment --train-rounds 200 --eval-rounds 30 --seed 20260823
 # Gaussian swarm ingress from the south (σx=70 m, σy=30 m):
 cargo run --release -- experiment --ingress gaussian --train-rounds 200 --eval-rounds 30 --seed 20260823
+# Same-tick lock radio (120 m); at D_tgt=50 m outcomes match no-radio:
+cargo run --release -- experiment --comms-range 120 --train-rounds 200 --eval-rounds 30 --seed 20260823
 ```
 
 This evaluates three algorithms on the same 30 seeds:

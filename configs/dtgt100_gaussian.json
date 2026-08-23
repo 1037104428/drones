@@ -1,0 +1,7 @@
+{
+  "ingress": "gaussian",
+  "sigma_x_m": 70.0,
+  "sigma_y_m": 30.0,
+  "detection_range_m": 100.0,
+  "comms_range_m": 0.0
+}

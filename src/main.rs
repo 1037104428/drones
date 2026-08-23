@@ -62,6 +62,9 @@ enum Commands {
         /// `formation` (grid) or `gaussian` (2D normal ingress from the south).
         #[arg(long, default_value = "formation")]
         ingress: String,
+        /// Same-tick lock radio range (metres). 0 = no radio.
+        #[arg(long, default_value_t = 0.0)]
+        comms_range: f64,
     },
 }
 
@@ -100,6 +103,7 @@ fn main() -> ExitCode {
             skip_train,
             formation,
             ingress,
+            comms_range,
         } => experiment(
             train_rounds,
             eval_rounds,
@@ -111,6 +115,7 @@ fn main() -> ExitCode {
             skip_train,
             formation,
             ingress,
+            comms_range,
         ),
     };
     match result {
@@ -165,6 +170,7 @@ fn experiment(
     skip_train: bool,
     formation: String,
     ingress: String,
+    comms_range: f64,
 ) -> Result<(), RunError> {
     let stagger = match formation.as_str() {
         "staggered" | "stagger" => true,
@@ -178,9 +184,10 @@ fn experiment(
     let mut cfg = SimConfig::default();
     cfg.stagger_rows = stagger;
     cfg.ingress = ingress.clone();
+    cfg.comms_range_m = comms_range;
     let cfg = cfg.validated()?;
     println!(
-        "experiment ingress={ingress} formation={formation} stagger_rows={stagger} seed={seed} train={train_rounds} eval={eval_rounds} lr={lr} skip_train={skip_train} model={}",
+        "experiment ingress={ingress} formation={formation} stagger_rows={stagger} comms_range={comms_range} seed={seed} train={train_rounds} eval={eval_rounds} lr={lr} skip_train={skip_train} model={}",
         model.display()
     );
 
