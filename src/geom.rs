@@ -18,6 +18,13 @@ impl Position {
 
 /// Inverse-transform uniform sampling in a closed disk of `radius`.
 /// Consumes exactly two `f64` draws; no rejection sampling.
+pub fn sample_normal(rng: &mut impl Rng, mu: f64, sigma: f64) -> f64 {
+    let u = rng.gen::<f64>().clamp(1e-12, 1.0 - 1e-12);
+    let v = rng.gen::<f64>();
+    let z = (-2.0 * u.ln()).sqrt() * (std::f64::consts::TAU * v).cos();
+    mu + sigma * z
+}
+
 pub fn sample_point_in_disk(rng: &mut impl Rng, radius: f64) -> Position {
     let u: f64 = rng.gen();
     let theta: f64 = rng.gen::<f64>() * std::f64::consts::TAU;

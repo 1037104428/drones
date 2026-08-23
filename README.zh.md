@@ -22,6 +22,8 @@ Transformer 用 **逐步 REINFORCE** 训练（不用模仿学习）：每一仿�
 
 ```bash
 cargo run --release -- experiment --train-rounds 200 --eval-rounds 30 --seed 20260823
+# 高斯进入（σx=70 m，σy=30 m）：
+cargo run --release -- experiment --ingress gaussian --train-rounds 200 --eval-rounds 30 --seed 20260823
 ```
 
 同一种子评估三种算法：贪心 `nearest_in_range`、近邻涌现规则 `closer_than_friend`、强化学习 Transformer。

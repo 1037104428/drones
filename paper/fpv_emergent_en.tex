@@ -23,7 +23,7 @@
 \maketitle
 
 \begin{abstract}
-Expendable FPV airframes are cheap; two constraints are not. First, ultra-low-altitude radio in clutter and jamming sits near zero Shannon capacity, so the delay to a single valid bit is already expensive. Second, a one-shot warhead cannot amortise a GPU/NPU. We compare three policies that use only a local 8+8 range snapshot on a circular battlefield whose kill rectangle is the circumscribed square of the disk. \textbf{One Transformer} is queried by all twelve drones each tick and trained from scratch by per-tick REINFORCE on CPU (Rayon); the reward is the increment of mean target survival, not compute time. Enemy seeker range is $50\,\mathrm{m}$; friend visual range is $100\,\mathrm{m}$; eight slots are a cap on \emph{visible} contacts, not omniscience. On 30 paired seeds greedy and the shared Transformer match exactly (10.23 kills, 13.99\,s); the closer-than-friend rule is slightly more conservative (9.80, 14.39\,s). Ops/select: 1.0, $4.53\times 10^4$, and 5.7. The net learned greedy fire; it does not buy extra kills.
+Expendable FPV airframes are cheap; two constraints are not. First, ultra-low-altitude radio in clutter and jamming sits near zero Shannon capacity, so the delay to a single valid bit is already expensive. Second, a one-shot warhead cannot amortise a GPU/NPU. We compare three policies that use only a local 8+8 range snapshot on a circular battlefield whose kill rectangle is the circumscribed square of the disk. \textbf{One Transformer} is queried by all twelve drones each tick and trained from scratch by per-tick REINFORCE on CPU (Rayon); the reward is the increment of mean target survival, not compute time. Enemy seeker range is $50\,\mathrm{m}$; friend visual range is $100\,\mathrm{m}$; eight slots are a cap on \emph{visible} contacts, not omniscience. On 30 paired seeds greedy and the shared Transformer match exactly (10.23 kills, 13.99\,s); the closer-than-friend rule is slightly more conservative (9.80, 14.39\,s). Ops/select: 1.0, $4.53\times 10^4$, and 5.7. The net learned greedy fire; it does not buy extra kills. A Gaussian ingress from the south ($x\sim\mathcal N(0,70^2)$, $y\sim\mathcal N(\mu_y,30^2)$) raises greedy/net kills to 11.30 versus 10.13 for the friend rule; the net again matches greedy round-by-round.
 \end{abstract}
 
 \noindent\textbf{Keywords:} FPV, ultra-low SNR, emergent rules, greedy targeting, shared Transformer, on-board compute
@@ -109,6 +109,26 @@ rule $-$ Transformer & $+0.397$ & $+5.74$ & $9.7\times 10^{-9}$ \\
 
 The RL net matches greedy round-by-round (it learned to fire nearest-in-range). Without an immediate fire bonus, training collapsed to zero kills around round 90; shaping plus entropy keeps it at $\approx 10$ kills. The friend rule is significantly more conservative ($p=9.7\times 10^{-9}$) because $D_{\mathrm{fr}}=100\,\mathrm{m}$ always sees the trail partner at 40\,m. Compute: greedy $\approx 1$, rule $5.7$, Transformer $4.53\times 10^4$.
 
+\paragraph{Gaussian ingress.}
+Twelve drones enter from the south as a 2D Gaussian blob ($\sigma_x=70\,\mathrm{m}$, $\sigma_y=30\,\mathrm{m}$, min separation 8\,m). The Transformer is retrained for 200 rounds on this ingress. Table~\ref{tab:res-g}.
+
+\begin{table}[H]
+\centering
+\caption{Gaussian ingress, 30 shared seeds}
+\label{tab:res-g}
+\begin{tabular}{lccc}
+\toprule
+Algorithm & Kills & Mean survival (s) & ops / select \\
+\midrule
+Greedy nearest-in-range & 11.30 & 14.092 & 1.0 \\
+Closer-than-friend & 10.13 & 15.274 & 7.8 \\
+Shared Transformer (retrained) & 11.30 & 14.092 & $4.530\times 10^4$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Greedy/net rise from 10.23 to 11.30 kills (denser coverage near the origin). The friend rule remains more conservative ($p\sim 10^{-16}$ on survival). The net again copies greedy. CSV: \texttt{results/gaussian/}.
+
 \begin{figure}[H]
   \centering
   \includegraphics[width=0.88\textwidth]{figures/survival_compare.png}
@@ -150,7 +170,7 @@ Twelve drones sharing one net already give twelve times the gradient of a per-ai
 
 \section{Conclusion}
 
-A shared Transformer trained by per-tick REINFORCE on CPU learns greedy fire and does not outperform it, at $\sim 4.5\times 10^4$ times the ops. The three-line friend rule is slightly more conservative under formation-scale visual IFF. Ultra-low SNR forbids a richer state; expendability forbids an NPU. Code and CSV metrics: \url{https://github.com/1037104428/drones}.
+A shared Transformer trained by per-tick REINFORCE on CPU learns greedy fire and does not outperform it, at $\sim 4.5\times 10^4$ times the ops, for both a 2$\times$6 line-abreast entry and a Gaussian blob entry. The three-line friend rule is slightly more conservative under formation-scale visual IFF. Ultra-low SNR forbids a richer state; expendability forbids an NPU. Code and CSV metrics: \url{https://github.com/1037104428/drones}.
 
 \begin{verbatim}
 git clone https://github.com/1037104428/drones.git

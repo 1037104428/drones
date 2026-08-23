@@ -32,7 +32,7 @@
 \maketitle
 
 \begin{abstract}
-第一人称视角（FPV）自杀式无人机已经把单机成本压到消费电子量级，但其编队协同仍受两类硬约束支配：其一，超低空、强地杂波与电子对抗使机间无线电长期工作在 Shannon 容量接近零的超低信噪比区，能测到一个有效信息比特的到达时延已极为可贵；其二，一次性战斗部决定了为每架飞机配备 GPU/NPU 在费效上不合理。本文在可复现的二维圆形战场上对比三种\emph{仅使用本地 8+8 距离快照}的瞄准策略：贪心就近开火、近邻涌现规则（最近合格目标严格近于最近友机才开火），以及 12 架无人机\emph{共用一套权重}的一层 Transformer（逐步仿真、每拍对全体无人机并行 REINFORCE，奖励只含平均存活时间增量，不用 GPU）。杀伤区为圆盘的外接正方形。探测为圈内上限：假想敌 $D_{\mathrm{tgt}}=50\,\mathrm{m}$、友军 $D_{\mathrm{fr}}=100\,\mathrm{m}$，各最多记 8 个看得见的对象。并排编队、12 机共享一套 Transformer，逐步 REINFORCE（CPU 20 线程）。30 轮同种子：贪心与 Transformer 场均中和均为 10.23、存活 13.99\,s（逐轮相同，$p=1$），每步分别约 1 与 $4.53\times 10^4$ ops；近邻规则 9.80、14.39\,s、5.7 ops。规则因看得见 40 m 处的后排而更保守。结论：压制条件下本地规则足够，网络在学会贪心开火后并不能多打掉目标，只是贵了四个数量级。
+第一人称视角（FPV）自杀式无人机已经把单机成本压到消费电子量级，但其编队协同仍受两类硬约束支配：其一，超低空、强地杂波与电子对抗使机间无线电长期工作在 Shannon 容量接近零的超低信噪比区，能测到一个有效信息比特的到达时延已极为可贵；其二，一次性战斗部决定了为每架飞机配备 GPU/NPU 在费效上不合理。本文在可复现的二维圆形战场上对比三种\emph{仅使用本地 8+8 距离快照}的瞄准策略：贪心就近开火、近邻涌现规则（最近合格目标严格近于最近友机才开火），以及 12 架无人机\emph{共用一套权重}的一层 Transformer（逐步仿真、每拍对全体无人机并行 REINFORCE，奖励只含平均存活时间增量，不用 GPU）。杀伤区为圆盘的外接正方形。探测为圈内上限：假想敌 $D_{\mathrm{tgt}}=50\,\mathrm{m}$、友军 $D_{\mathrm{fr}}=100\,\mathrm{m}$，各最多记 8 个看得见的对象。并排编队、12 机共享一套 Transformer，逐步 REINFORCE（CPU 20 线程）。30 轮同种子：贪心与 Transformer 场均中和均为 10.23、存活 13.99\,s（逐轮相同，$p=1$），每步分别约 1 与 $4.53\times 10^4$ ops；近邻规则 9.80、14.39\,s、5.7 ops。规则因看得见 40 m 处的后排而更保守。另做高斯进入：12 机从正南以 $x\sim\mathcal N(0,70^2)$、$y\sim\mathcal N(\mu_y,30^2)$ 进入，贪心与网络同为中和 11.30、存活 14.09\,s，规则 10.13、15.27\,s。结论：压制条件下本地规则足够，网络学会贪心开火后并不能多打掉目标，只是贵了四个数量级。
 \end{abstract}
 
 \noindent\textbf{关键词：} FPV 自杀式无人机；超低信噪比；涌现智能；近邻规则；Transformer；机载算力费效
@@ -107,7 +107,7 @@ FPV 的典型载荷是模拟图传加窄带遥控。电子对抗条件下，可�
 
 \subsection{本地传感}
 
-每机每拍只能感知圈内物体，8 是记忆上限不是全知。假想敌用光电/寻的半径 $D_{\mathrm{tgt}}=50\,\mathrm{m}$（无线电压制下不能靠数据链把远点送进座舱）；友军用目视/近距通视 $D_{\mathrm{fr}}=100\,\mathrm{m}$（编队里 40 m 排距、80 m 邻轨的机体仍看得见，但看不到更远的电台位置）。圈外目标与友机不入库。开火要求目标在 $D_{\mathrm{tgt}}$ 内。编队默认为两排并排。
+每机每拍只能感知圈内物体，8 是记忆上限不是全知。假想敌用光电/寻的半径 $D_{\mathrm{tgt}}=50\,\mathrm{m}$（无线电压制下不能靠数据链把远点送进座舱）；友军用目视/近距通视 $D_{\mathrm{fr}}=100\,\mathrm{m}$（编队里 40 m 排距、80 m 邻轨的机体仍看得见，但看不到更远的电台位置）。圈外目标与友机不入库。开火要求目标在 $D_{\mathrm{tgt}}$ 内。编队默认为两排并排。另可选高斯进入：机群从正南以二维正态散布飞入（$\sigma_x=70\,\mathrm{m}$，$\sigma_y=30\,\mathrm{m}$，机间距至少 8 m），模拟不整齐的实际进场。
 
 \section{三种算法}
 
@@ -254,6 +254,42 @@ $c_{\mathrm{airframe}}$ 与 $c_{\mathrm{warhead}}$ 已因消费电子下探；�
 
 贪心与 Transformer 杀伤统计不可区分（学会了同一策略）。近邻规则显著更保守。算力上贪心约 1 ops、规则 5.7、网络 $4.5\times 10^4$。这正是装备论证需要的形态——\textbf{网络没有多打掉目标，只是贵了四个数量级}。
 
+\subsection{高斯进入}
+
+将 2$\times$6 格子换成机群从正南以二维高斯进入：$x\sim\mathcal N(0,70^2)$，$y\sim\mathcal N(\mu_y,30^2)$，$\mu_y$ 在圆外南侧，任意两机间距至少 8 m。Transformer 在该分布上重新做 200 轮逐步 REINFORCE，再与另两种算法在同一 30 个种子上评估。CSV 见 \texttt{results/gaussian/}。
+
+\begin{table}[H]
+\centering
+\caption{高斯进入，30 轮同种子评估均值}
+\label{tab:res-g}
+\begin{tabular}{lccc}
+\toprule
+算法 & 场均中和数 & 平均存活时间 (s) & 每步 compute\_ops \\
+\midrule
+贪心 \texttt{nearest\_in\_range} & 11.30 & 14.092 & $1.0$ \\
+近邻涌现规则 & 10.13 & 15.274 & $7.8$ \\
+共享 Transformer（本分布上现训） & 11.30 & 14.092 & $4.530\times 10^{4}$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{table}[H]
+\centering
+\caption{高斯进入：配对高斯 $z$ 检验（存活时间）}
+\label{tab:pval-g}
+\begin{tabular}{lccc}
+\toprule
+对比 & $\bar\Delta$ (s) & $z$ & 双侧 $p$ \\
+\midrule
+贪心 $-$ 涌现规则 & $-1.182$ & $-8.67$ & $<10^{-16}$ \\
+贪心 $-$ Transformer & $0$ & $0$ & $1$ \\
+涌现规则 $-$ Transformer & $+1.182$ & $+8.67$ & $<10^{-16}$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+相对并排格子，高斯进入使贪心/网络场均中和从 10.23 升到 11.30：机群在圆心附近更密，50 m 光电重叠更好。规则仍显著更保守（少约 1.17 杀，$p\sim 10^{-8}$），因为 $D_{\mathrm{fr}}=100\,\mathrm{m}$ 下近距友机更容易被看见。Transformer 再次与贪心逐轮相同。结论对进场几何稳健：网络没有多打掉目标。
+
 \begin{figure}[H]
   \centering
   \includegraphics[width=0.92\textwidth]{figures/pvalue_gaussian.png}
@@ -261,12 +297,12 @@ $c_{\mathrm{airframe}}$ 与 $c_{\mathrm{warhead}}$ 已因消费电子下探；�
   \label{fig:pval}
 \end{figure}
 
-计算量则完全不在同一量级：规则每步约 17 次操作，网络约 45311 次，比值 2619；按每轮总 ops 计（$5.62\times 10^{8}$ 对 $2.12\times 10^{5}$）比值为 2647。该差距已经足够决定 MCU 与 NPU 的选型，而真实机载视觉网络只会把分母保持在 17、把分子再放大。
+计算量仍差四个数量级。该差距已经足够决定 MCU 与 NPU 的选型，而真实机载视觉网络只会把分母保持在个位数、把分子再放大。
 
 \begin{figure}[H]
   \centering
   \includegraphics[width=0.92\textwidth]{figures/survival_compare.png}
-  \caption{30 轮平均存活时间分布（越低越好）。贪心最强，涌现规则其次，Transformer 最弱。}
+  \caption{并排编队 30 轮平均存活时间（越低越好）。贪心与 Transformer 重合，规则略高。}
   \label{fig:surv}
 \end{figure}
 
@@ -280,7 +316,7 @@ $c_{\mathrm{airframe}}$ 与 $c_{\mathrm{warhead}}$ 已因消费电子下探；�
 \begin{figure}[H]
   \centering
   \includegraphics[width=0.92\textwidth]{figures/killed_compare.png}
-  \caption{30 轮中和数分布。一次性上限 12；贪心约 11.4，规则约 10.1，Transformer 约 5.6。}
+  \caption{并排编队 30 轮中和数。一次性上限 12；贪心与 Transformer 约 10.2，规则约 9.8。}
   \label{fig:kill}
 \end{figure}
 
@@ -309,7 +345,7 @@ $c_{\mathrm{airframe}}$ 与 $c_{\mathrm{warhead}}$ 已因消费电子下探；�
 本文在杀伤区完美包含圆形战场的可复现平台上，对比了一次性 FPV 机群的两种本地瞄准算法。30 轮配对实验给出三点结论。
 
 \begin{enumerate}
-  \item \textbf{效能。} 并排、圈内 8 槽上限下，共享 Transformer（逐步 RL）与贪心同为中和 10.23、存活 13.99\,s；近邻规则 9.80、14.39\,s。12 机共用一套权重。
+  \item \textbf{效能。} 并排下共享 Transformer 与贪心同为中和 10.23、存活 13.99\,s；近邻规则 9.80、14.39\,s。高斯进入下三者为 11.30 / 10.13 / 11.30 杀。12 机共用一套权重。
   \item \textbf{成本。} 贪心约 1 ops，规则 5.7，网络 $4.53\times 10^{4}$。网络没有换来额外杀伤。
   \item \textbf{通信。} 超低 SNR 下有效信息的时延本身是稀缺品。三种算法都不依赖机间共享目标表；12 机共用一套 Transformer 权重，并不增加无线电载荷。
 \end{enumerate}
@@ -330,7 +366,12 @@ cargo test
 cargo run --release -- experiment \
   --train-rounds 200 --eval-rounds 30 --seed 20260823
 \end{verbatim}
-仓库中 \texttt{results/*.csv} 为本文表~\ref{tab:res}--\ref{tab:pval} 的评估记录；\texttt{models/transformer.json} 为 200 轮逐步 REINFORCE 后的共享权重。完整 SQLite 可由上述命令在本地生成。同一种子重复评估时，中和结果与 \texttt{compute\_ops} 逐行一致。英文稿见 \texttt{fpv\_emergent\_en.pdf}。
+仓库中 \texttt{results/*.csv} 为并排评估（表~\ref{tab:res}），\texttt{results/gaussian/*.csv} 为高斯进入（表~\ref{tab:res-g}）。\texttt{models/transformer.json} 与 \texttt{models/transformer\_gaussian.json} 分别为两套进场上训练的共享权重。高斯进入复现：
+\begin{verbatim}
+cargo run --release -- experiment --ingress gaussian \
+  --train-rounds 200 --eval-rounds 30 --seed 20260823
+\end{verbatim}
+英文稿见 \texttt{fpv\_emergent\_en.pdf}。
 
 \begin{thebibliography}{9}
 

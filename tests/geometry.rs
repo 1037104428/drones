@@ -66,6 +66,20 @@ fn two_rows_are_staggered_on_twelve_rails() {
 }
 
 #[test]
+fn gaussian_ingress_places_twelve_separated_drones() {
+    let mut cfg = SimConfig::default();
+    cfg.ingress = "gaussian".into();
+    let cfg = cfg.validated().unwrap();
+    let world = battlefield_sim::World::new(cfg, 7).unwrap();
+    assert_eq!(world.drones().len(), 12);
+    for i in 0..12 {
+        for j in (i + 1)..12 {
+            assert!(world.drones()[i].pos.distance(world.drones()[j].pos) >= 8.0);
+        }
+    }
+}
+
+#[test]
 fn aligned_rows_share_the_same_x() {
     let mut cfg = SimConfig::default();
     cfg.stagger_rows = false;

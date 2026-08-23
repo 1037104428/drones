@@ -1,7 +1,7 @@
 use std::collections::BTreeMap;
 
 use rand::rngs::StdRng;
-use rand::SeedableRng;
+use rand::{Rng, SeedableRng};
 use rayon::prelude::*;
 
 use crate::algorithm::{SelectResult, TargetingAlgorithm, TargetingInput};
@@ -9,7 +9,7 @@ use crate::config::{ConfigError, SimConfig};
 use crate::contact::{keep_nearest_drones, keep_nearest_targets, DroneContact, TargetContact};
 use crate::drone::{Drone, DroneState};
 use crate::enemy::{Enemy, EnemyState};
-use crate::geom::{formation_rows, sample_point_in_disk, Position};
+use crate::geom::{formation_rows, sample_normal, sample_point_in_disk, Position};
 use crate::ids::{DroneId, EnemyId};
 
 #[derive(Clone, Copy, Debug)]
@@ -112,31 +112,8 @@ impl World {
             .map(|(i, pos)| Enemy::new(EnemyId(i as u32), pos))
             .collect();
 
-        let rows = if config.stagger_rows && config.drone_rows > 1 {
-            formation_rows(
-                config.radius_m,
-                config.drones_per_row,
-                config.drone_rows,
-            )
-        } else {
-            let xs = crate::geom::row_x_positions(config.radius_m, config.drones_per_row);
-            vec![xs; config.drone_rows as usize]
-        };
-        let y_lead = -config.radius_m - config.start_margin_m;
-        let mut drones = Vec::new();
-        let mut next_id = 0u32;
-        for (row, xs) in rows.iter().enumerate() {
-            let y = y_lead - (row as f64) * config.row_gap_m;
-            for &x in xs {
-                drones.push(Drone::new(
-                    DroneId(next_id),
-                    Position { x, y },
-                    config.detection_range_m,
-                ));
-                next_id += 1;
-            }
-        }
-
+        let mut drone_rng = StdRng::seed_from_u64(seed ^ 0xD10_7E5);
+        let drones = spawn_drones(&config, &mut drone_rng);
         Ok(Self {
             config,
             seed,
@@ -146,7 +123,64 @@ impl World {
             engagements: BTreeMap::new(),
         })
     }
+}
 
+fn spawn_drones(config: &SimConfig, rng: &mut impl Rng) -> Vec<Drone> {
+    let n = config.drone_count() as usize;
+    if config.ingress == "gaussian" {
+        let mu_y = -config.radius_m - config.start_margin_m - 0.5 * config.row_gap_m;
+        let min_sep = 8.0;
+        let mut drones = Vec::with_capacity(n);
+        let mut attempts = 0;
+        while drones.len() < n && attempts < 50_000 {
+            attempts += 1;
+            let pos = Position {
+                x: sample_normal(rng, 0.0, config.sigma_x_m),
+                y: sample_normal(rng, mu_y, config.sigma_y_m),
+            };
+            if drones
+                .iter()
+                .any(|d: &Drone| d.pos.distance(pos) < min_sep)
+            {
+                continue;
+            }
+            drones.push(Drone::new(
+                DroneId(drones.len() as u32),
+                pos,
+                config.detection_range_m,
+            ));
+        }
+        assert_eq!(drones.len(), n, "gaussian ingress failed to place drones");
+        return drones;
+    }
+    let rows = if config.stagger_rows && config.drone_rows > 1 {
+        formation_rows(
+            config.radius_m,
+            config.drones_per_row,
+            config.drone_rows,
+        )
+    } else {
+        let xs = crate::geom::row_x_positions(config.radius_m, config.drones_per_row);
+        vec![xs; config.drone_rows as usize]
+    };
+    let y_lead = -config.radius_m - config.start_margin_m;
+    let mut drones = Vec::new();
+    let mut next_id = 0u32;
+    for (row, xs) in rows.iter().enumerate() {
+        let y = y_lead - (row as f64) * config.row_gap_m;
+        for &x in xs {
+            drones.push(Drone::new(
+                DroneId(next_id),
+                Position { x, y },
+                config.detection_range_m,
+            ));
+            next_id += 1;
+        }
+    }
+    drones
+}
+
+impl World {
     pub fn sim_time_s(&self) -> f64 {
         self.tick as f64 * self.config.dt_s
     }

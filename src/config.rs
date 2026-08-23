@@ -37,6 +37,23 @@ pub struct SimConfig {
     /// 后排落在先导排航线缝隙（砖砌错开）。false 则为并排同一组 x。
     #[serde(default = "default_stagger")]
     pub stagger_rows: bool,
+    /// `formation` = 2×6 grid; `gaussian` = 2D normal ingress from the south.
+    #[serde(default = "default_ingress")]
+    pub ingress: String,
+    #[serde(default = "default_sigma_x")]
+    pub sigma_x_m: f64,
+    #[serde(default = "default_sigma_y")]
+    pub sigma_y_m: f64,
+}
+
+fn default_ingress() -> String {
+    "formation".into()
+}
+fn default_sigma_x() -> f64 {
+    70.0
+}
+fn default_sigma_y() -> f64 {
+    30.0
 }
 
 fn default_stagger() -> bool {
@@ -70,6 +87,9 @@ impl Default for SimConfig {
             expend_on_kill: true,
             max_ticks: 0,
             stagger_rows: false,
+            ingress: default_ingress(),
+            sigma_x_m: default_sigma_x(),
+            sigma_y_m: default_sigma_y(),
         }
     }
 }
@@ -98,6 +118,15 @@ impl SimConfig {
         require_positive("friend_detection_range_m", self.friend_detection_range_m)?;
         require_positive("t_kill_s", self.t_kill_s)?;
         require_positive("row_gap_m", self.row_gap_m)?;
+        if self.ingress != "formation" && self.ingress != "gaussian" {
+            return Err(ConfigError::InvalidFormation {
+                reason: format!("ingress must be formation or gaussian, got {}", self.ingress),
+            });
+        }
+        if self.ingress == "gaussian" {
+            require_positive("sigma_x_m", self.sigma_x_m)?;
+            require_positive("sigma_y_m", self.sigma_y_m)?;
+        }
         require_non_negative("start_margin_m", self.start_margin_m)?;
         require_non_negative("end_margin_m", self.end_margin_m)?;
 

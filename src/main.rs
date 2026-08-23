@@ -59,6 +59,9 @@ enum Commands {
         /// `aligned` = same x on both rows; `staggered` = brick gaps.
         #[arg(long, default_value = "aligned")]
         formation: String,
+        /// `formation` (grid) or `gaussian` (2D normal ingress from the south).
+        #[arg(long, default_value = "formation")]
+        ingress: String,
     },
 }
 
@@ -96,6 +99,7 @@ fn main() -> ExitCode {
             lr,
             skip_train,
             formation,
+            ingress,
         } => experiment(
             train_rounds,
             eval_rounds,
@@ -106,6 +110,7 @@ fn main() -> ExitCode {
             lr,
             skip_train,
             formation,
+            ingress,
         ),
     };
     match result {
@@ -159,6 +164,7 @@ fn experiment(
     lr: f32,
     skip_train: bool,
     formation: String,
+    ingress: String,
 ) -> Result<(), RunError> {
     let stagger = match formation.as_str() {
         "staggered" | "stagger" => true,
@@ -171,9 +177,10 @@ fn experiment(
     };
     let mut cfg = SimConfig::default();
     cfg.stagger_rows = stagger;
+    cfg.ingress = ingress.clone();
     let cfg = cfg.validated()?;
     println!(
-        "experiment formation={formation} stagger_rows={stagger} seed={seed} train={train_rounds} eval={eval_rounds} lr={lr} skip_train={skip_train} model={}",
+        "experiment ingress={ingress} formation={formation} stagger_rows={stagger} seed={seed} train={train_rounds} eval={eval_rounds} lr={lr} skip_train={skip_train} model={}",
         model.display()
     );
 
