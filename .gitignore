@@ -1,0 +1,13 @@
+/target
+/*.sqlite
+*.sqlite-wal
+*.sqlite-shm
+*.sqlite-journal
+paper/*.aux
+paper/*.log
+paper/*.out
+paper/*.toc
+paper/*.synctex.gz
+.DS_Store
+__pycache__/
+*.pyc
