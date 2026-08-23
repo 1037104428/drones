@@ -52,7 +52,10 @@ The battlefield is a disk of radius $R=200\,\mathrm{m}$. Twenty static enemies a
 All three consume the same 8+8 snapshot.
 
 \paragraph{Greedy (\texttt{nearest\_in\_range}).}
-Fire at the nearest in-range, unlocked enemy (ties by id). About 9 ops. No friend geometry.
+Fire at the nearest in-range, unlocked enemy (ties by id). About 1 ops/select on this sensor model (empty sky most ticks). No friend geometry.
+
+\paragraph{Greedy, no comms (\texttt{greedy\_no\_comms}).}
+Same seeker, but the policy ignores teammates and ignores others' locks; it only ranks in-range enemies. The world still forbids two warheads on one target. This is zero radio, zero IFF.
 
 \paragraph{Closer-than-friend.}
 Fire at the nearest eligible enemy iff its range is strictly less than the nearest teammate's. About 17 ops. Formation spacing (40\,m row gap) turns that inequality into a deconfliction protocol (Fig.~\ref{fig:rule}).
@@ -86,6 +89,7 @@ Thirty paired rounds, base seed $20270823$. Table~\ref{tab:res} and Figs.~\ref{f
 Algorithm & Kills & Mean survival (s) & ops / select \\
 \midrule
 Greedy nearest-in-range & 10.23 & 13.989 & 1.0 \\
+Greedy, no comms & 10.23 & 13.989 & 1.0 \\
 Closer-than-friend & 9.80 & 14.386 & 5.7 \\
 Shared Transformer (per-tick RL) & 10.23 & 13.989 & $4.530\times 10^4$ \\
 \bottomrule
@@ -107,7 +111,7 @@ rule $-$ Transformer & $+0.397$ & $+5.74$ & $9.7\times 10^{-9}$ \\
 \end{tabular}
 \end{table}
 
-The RL net matches greedy round-by-round (it learned to fire nearest-in-range). Without an immediate fire bonus, training collapsed to zero kills around round 90; shaping plus entropy keeps it at $\approx 10$ kills. The friend rule is significantly more conservative ($p=9.7\times 10^{-9}$) because $D_{\mathrm{fr}}=100\,\mathrm{m}$ always sees the trail partner at 40\,m. Compute: greedy $\approx 1$, rule $5.7$, Transformer $4.53\times 10^4$.
+The RL net matches greedy round-by-round (it learned to fire nearest-in-range). \texttt{greedy\_no\_comms} matches \texttt{nearest\_in\_range} on every seed: not seeing others' locks does not change kills under exclusive acquire. Without an immediate fire bonus, training collapsed to zero kills around round 90; shaping plus entropy keeps it at $\approx 10$ kills. The friend rule is significantly more conservative ($p=9.7\times 10^{-9}$) because $D_{\mathrm{fr}}=100\,\mathrm{m}$ always sees the trail partner at 40\,m. Compute: greedy $\approx 1$, rule $5.7$, Transformer $4.53\times 10^4$.
 
 \paragraph{Gaussian ingress.}
 Twelve drones enter from the south as a 2D Gaussian blob ($\sigma_x=70\,\mathrm{m}$, $\sigma_y=30\,\mathrm{m}$, min separation 8\,m). The Transformer is retrained for 200 rounds on this ingress. Table~\ref{tab:res-g}.
@@ -121,13 +125,14 @@ Twelve drones enter from the south as a 2D Gaussian blob ($\sigma_x=70\,\mathrm{
 Algorithm & Kills & Mean survival (s) & ops / select \\
 \midrule
 Greedy nearest-in-range & 11.30 & 14.092 & 1.0 \\
+Greedy, no comms & 11.30 & 14.092 & 1.0 \\
 Closer-than-friend & 10.13 & 15.274 & 7.8 \\
 Shared Transformer (retrained) & 11.30 & 14.092 & $4.530\times 10^4$ \\
 \bottomrule
 \end{tabular}
 \end{table}
 
-Greedy/net rise from 10.23 to 11.30 kills (denser coverage near the origin). The friend rule remains more conservative ($p\sim 10^{-16}$ on survival). The net again copies greedy. CSV: \texttt{results/gaussian/}.
+Greedy, no-comms greedy, and the net all rise from 10.23 to 11.30 kills (denser coverage near the origin); no-comms greedy again matches nearest-in-range seed-for-seed. The friend rule remains more conservative ($p\sim 10^{-16}$ on survival). CSV: \texttt{results/gaussian/}.
 
 \begin{figure}[H]
   \centering

@@ -13,7 +13,7 @@ pub mod plot;
 pub mod world;
 
 pub use algorithm::{algorithm_by_name, SelectResult, TargetingAlgorithm, TargetingInput};
-pub use algorithms::{CloserThanFriend, NearestInRange, TransformerPolicy};
+pub use algorithms::{CloserThanFriend, GreedyNoComms, NearestInRange, TransformerPolicy};
 pub use config::{ConfigError, SimConfig};
 pub use contact::{
     keep_nearest_drones, keep_nearest_targets, DroneContact, TargetContact, MAX_DRONE_CONTACTS,

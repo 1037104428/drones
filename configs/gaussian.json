@@ -1,0 +1,5 @@
+{
+  "ingress": "gaussian",
+  "sigma_x_m": 70.0,
+  "sigma_y_m": 30.0
+}

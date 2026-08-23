@@ -31,8 +31,9 @@ This evaluates three algorithms on the same 30 seeds:
 
 | Algorithm | Role |
 |-----------|------|
-| `nearest_in_range` | Greedy control: fire at the nearest in-range target |
-| `closer_than_friend` | Research rule: fire only if nearest target is strictly closer than nearest teammate |
+| `nearest_in_range` | Greedy: nearest in-range unlocked target |
+| `greedy_no_comms` | Greedy with no friend info and no lock awareness |
+| `closer_than_friend` | Fire only if nearest target is strictly closer than nearest visible teammate |
 | `transformer` | Onboard-AI analogue, trained by per-tick RL |
 
 Artifacts:

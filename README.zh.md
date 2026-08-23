@@ -26,6 +26,6 @@ cargo run --release -- experiment --train-rounds 200 --eval-rounds 30 --seed 202
 cargo run --release -- experiment --ingress gaussian --train-rounds 200 --eval-rounds 30 --seed 20260823
 ```
 
-同一种子评估三种算法：贪心 `nearest_in_range`、近邻涌现规则 `closer_than_friend`、强化学习 Transformer。
+同一种子评估：贪心 `nearest_in_range`、无通信贪心 `greedy_no_comms`、近邻规则 `closer_than_friend`、强化学习 Transformer。
 
 仓库已含一次完整评估的 CSV 与 SQLite，可直接对照论文表格。

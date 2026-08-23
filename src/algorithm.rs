@@ -29,6 +29,7 @@ pub trait TargetingAlgorithm: Send + Sync {
 pub fn algorithm_by_name(name: &str) -> Result<Box<dyn TargetingAlgorithm>, ConfigError> {
     match name {
         "nearest_in_range" => Ok(Box::new(crate::algorithms::NearestInRange)),
+        "greedy_no_comms" => Ok(Box::new(crate::algorithms::GreedyNoComms)),
         "closer_than_friend" => Ok(Box::new(crate::algorithms::CloserThanFriend)),
         "transformer" => Ok(Box::new(
             crate::algorithms::TransformerPolicy::load_or_new(
